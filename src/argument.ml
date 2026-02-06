@@ -27,12 +27,13 @@ end
 
 module Monitor = struct
 
-  type t = MonPoly | VeriMon | DejaVu
+  type t = MonPoly | VeriMon | DejaVu | TimelyMon
 
   let of_string = function
     | "monpoly" | "MonPoly" | "Monpoly" -> MonPoly
     | "verimon" | "VeriMon" | "Verimon" -> VeriMon
     | "dejavu" | "DejaVu" | "Dejavu" -> DejaVu
+    | "timelymon" | "TimelyMon" | "Timelymon" -> TimelyMon
     | _ -> Format.eprintf "monitors supported: monpoly, verimon or dejavu\n%!";
            raise (Invalid_argument "undefined monitor")
 
@@ -40,10 +41,11 @@ module Monitor = struct
     | MonPoly -> "MonPoly"
     | VeriMon -> "VeriMon"
     | DejaVu -> "DejaVu"
+    | TimelyMon -> "TimelyMon"
 
   let exec_path = function
     | MonPoly
-      | VeriMon -> "_build/default/third-party/monpoly/src/main.exe"
+      | VeriMon -> "_build/install/default/bin/monpoly"
     | DejaVu -> failwith "not yet"
 
   let extra_args (pref: Preference.t) = function
@@ -52,6 +54,7 @@ module Monitor = struct
                     | Satisfaction -> []
                     | Violation -> ["-negate"])
     | DejaVu -> failwith "not yet"
+    | TimelyMon -> failwith "not yet"
 
 end
 

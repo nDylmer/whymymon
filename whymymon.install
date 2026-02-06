@@ -1,0 +1,12 @@
+lib: [
+  "_build/install/default/lib/whymymon/META"
+  "_build/install/default/lib/whymymon/dune-package"
+  "_build/install/default/lib/whymymon/opam"
+]
+bin: [
+  "_build/install/default/bin/whymymon"
+]
+doc: [
+  "_build/install/default/doc/whymymon/LICENSE"
+  "_build/install/default/doc/whymymon/README.md"
+]

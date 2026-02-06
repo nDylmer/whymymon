@@ -67,11 +67,9 @@ module WhyMyMon = struct
          interf_ref := Argument.Interface.CLI;
          process_args_rec args
       | ("-monitor" :: m :: args) ->
-         nec_arg_count := !nec_arg_count + 1;
          mon_ref := Argument.Monitor.of_string m;
          process_args_rec args
       | ("-path" :: p :: args) ->
-         nec_arg_count := !nec_arg_count + 1;
          mon_path_ref := (if String.equal p "default" then
                             (Filename_unix.realpath (Argument.Monitor.exec_path !mon_ref))
                           else Filename_unix.realpath p);
@@ -106,7 +104,7 @@ module WhyMyMon = struct
       | ("-logstr" :: logs :: args) ->
          logstr_ref := logs;
          process_args_rec args
-      | [] -> if !nec_arg_count >= 3 then () else usage ()
+      | [] -> if !nec_arg_count >= 2 then () else usage ()
       | _ -> usage () in
     process_args_rec
 
@@ -114,11 +112,16 @@ module WhyMyMon = struct
     try
       process_args (List.tl_exn (Array.to_list Sys.argv));
       let extra_args = Argument.Monitor.extra_args !pref_ref !mon_ref in
+      if String.equal !mon_path_ref "" then
+        mon_path_ref := Filename_unix.realpath (Argument.Monitor.exec_path !mon_ref);
       match !mon_ref with
       | MonPoly
         | VeriMon -> let _ = Monitor.exec !interf_ref !mon_ref ~mon_path:!mon_path_ref ~sig_path:!sig_path_ref
                                ~formula_file:!formula_file_ref !stream_ref (Option.value_exn !formula_ref)
                                !pref_ref !mode_ref extra_args in ()
+
+      | DejaVu -> failwith "not yet"
+      | TimelyMon -> failwith "not yet"
       | _ -> failwith "not yet"
     with End_of_file -> exit 0
 
