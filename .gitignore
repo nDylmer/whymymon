@@ -26,6 +26,7 @@ tools/*.log
 # third party
 third-party/dejavu-online
 third-party/monpoly
+third-party/timelymon
 
 # tmp
 tmp/
