@@ -1,0 +1,28 @@
+
+
+
+how to call timelymon 
+
+
+
+algorithm work to deal with output being out of order
+
+
+
+more or less simulate very simple timelymon algorithms in the explanation so it deals with out of order events 
+
+
+
+
+
+
+
+to next meeting:
+1. translate csv to log 
+
+2. that you can call timelymon as monitor ( out put does not need to work fully)
+get timelymons output into whymymon
+
+3. understand the explanation part of monpoly
+
+extrct the produced valuations 
