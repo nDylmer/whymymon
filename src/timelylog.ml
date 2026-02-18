@@ -1,20 +1,26 @@
 open Base
 
 (* TimelyMon expects explicit tp and ts per emitted fact line. *)
+
+(* initialize counter for timepoint*)
 let tp_ref = ref (-1)
 
+(* resets counter*)
 let reset () =
   tp_ref := -1
 
+(* increments to next timepoint*)
 let next_tp () =
   tp_ref := !tp_ref + 1;
   !tp_ref
 
+(* converts internal valye to text, timelymon input is text*)
 let atom_of_dom = function
   | Dom.Int i -> Int.to_string i
   | Dom.Str s -> Printf.sprintf "'%s'" s
   | Dom.Float f -> Printf.sprintf "'%s'" (Float.to_string f)
 
+(* converts one event into one timelymon line*)
 let event_line ~tp ~ts ((pred, args) : Db.Event.t) =
   let csv_args =
     args
@@ -26,11 +32,13 @@ let event_line ~tp ~ts ((pred, args) : Db.Event.t) =
   else
     Printf.sprintf "%s, tp=%d, ts=%d, %s\n" pred tp ts csv_args
 
+(* converts all events in one database snapshot to lines, uses same tp and ts for these events*)
 let encode_db ~tp ~ts (db : Db.t) =
   Set.to_list db
   |> List.map ~f:(event_line ~tp ~ts)
   |> String.concat ~sep:""
 
+(* gets new tp via next_tp and then calls encode_db *)
 let encode_next_tp ~ts (db : Db.t) =
   let tp = next_tp () in
   encode_db ~tp ~ts db
