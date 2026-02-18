@@ -12,7 +12,7 @@ open Etc
 open Expl
 open Pred
 open Eio.Std
-
+open Argument
 module Quantifier = struct
 
   type t = Existential | Universal
@@ -212,7 +212,7 @@ let rec stop vars vars_map expl (pol: Polarity.t) = match vars, expl, pol with
   | [], Pdt.Leaf (Some (Proof.S _)), SAT -> true
   | [], Leaf (Some (V _)), VIO -> true
   | x :: xs, Node (y, part), _ when String.equal x y ->
-     let (kind, pol) = Map.find_exn vars_map x in
+    let (kind, pol) = Map.find_exn vars_map x in
      match kind, pol with
      | Quantifier.Existential, Polarity.SAT
        | Universal, VIO -> Part.exists part (fun expl -> stop xs vars_map expl pol)
@@ -220,6 +220,12 @@ let rec stop vars vars_map expl (pol: Polarity.t) = match vars, expl, pol with
        | Universal, SAT -> Part.for_all part (fun expl -> stop xs vars_map expl pol)
      | _ -> raise (Failure "stop: issue with variable ordering")
   | _ -> false
+  
+let should_stop vars vars_map mexpl pol =
+  try stop vars vars_map mexpl pol with
+  | Match_failure _ -> false
+
+  
 
 let explain prefix v pol tp f =
   (* traceln "assignment: %s" (Assignment.to_string v); *)
@@ -460,7 +466,7 @@ let explain prefix v pol tp f =
                                         | Some (Proof.S sp) -> Some (Proof.S (SOnce (cur_tp, sp)))
                                         | _ -> raise (Invalid_argument "found V proof in S case"))
                              | Some p -> Some p) expl mexpl in
-             if stop vars vars_map mexpl SAT then mexpl
+             if should_stop vars vars_map mexpl SAT then mexpl
              else once_sat cur_tp (l,r) vars f (tp-1) mexpl vars_map)
           else once_sat cur_tp (l,r) vars f (tp-1) mexpl vars_map))
   and once_vio cur_tp (l,r) vars f tp mexpl vars_map =
@@ -512,7 +518,7 @@ let explain prefix v pol tp f =
                                      | Some (Proof.S sp) -> Some (Proof.S (SEventually (cur_tp, sp)))
                                      | _ -> raise (Invalid_argument "found V proof in S case"))
                           | Some p -> Some p) expl mexpl in
-          if stop vars vars_map mexpl SAT then mexpl
+          if should_stop vars vars_map mexpl SAT then mexpl
           else eventually_sat cur_tp (l,r) vars f (tp+1) mexpl vars_map)
        else eventually_sat cur_tp (l,r) vars f (tp+1) mexpl vars_map)
   and eventually_vio cur_tp (l,r) vars f tp mexpl vars_map =
@@ -589,7 +595,7 @@ let explain prefix v pol tp f =
                                         | Some (Proof.V vp) -> Some (Proof.V (VHistorically (cur_tp, vp)))
                                         | _ -> raise (Invalid_argument "found S proof in V case"))
                              | Some p -> Some p) expl mexpl in
-             if stop vars vars_map mexpl VIO then mexpl
+             if should_stop vars vars_map mexpl VIO then mexpl
              else historically_vio cur_tp (l,r) vars f (tp-1) mexpl vars_map)
           else historically_vio cur_tp (l,r) vars f (tp-1) mexpl vars_map))
 
@@ -631,7 +637,7 @@ let explain prefix v pol tp f =
                                      | Some (Proof.V vp) -> Some (Proof.V (VAlways (cur_tp, vp)))
                                      | _ -> raise (Invalid_argument "found S proof in V case"))
                           | Some p -> Some p) expl mexpl in
-          if stop vars vars_map mexpl VIO then mexpl
+          if should_stop vars vars_map mexpl VIO then mexpl
           else always_vio cur_tp (l,r) vars f (tp+1) mexpl vars_map)
        else always_vio cur_tp (l,r) vars f (tp+1) mexpl vars_map)
 
@@ -843,68 +849,68 @@ let send_data json http_flow =
   Eio.Flow.copy_string (Printf.sprintf "data: %s\n\n" json) http_flow
 
 let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt last_tp http_flow_opt =
-  while true do
-    let line = Eio.Buf_read.line r_buf in
-    if !Etc.debug then traceln "Read emonitor line: %s" line;
-    if String.equal line "Stop" then
-      (match http_flow_opt with
-       | None -> raise Exit
-       | Some (http_flow) -> send_data "{\"disconnect\": true}" http_flow;
-                             raise Exit);
-    if Emonitor.is_verdict mon line then
-      (let (tp, ts, assignments) = Emonitor.to_tpts_assignments mon vars vars_tt line in
-       if !Etc.debug then traceln "%s" (Etc.string_list_to_string ~sep:"\n" (List.map assignments ~f:Assignment.to_string));
-       match http_flow_opt with
-       | None ->
-          (List.iter assignments ~f:(fun v ->
-               (* Stdio.printf "expl = %s\n" (Expl.opt_to_string (explain !prefix v pol tp f)); *)
-               let expl = Pdt.unsomes (explain !prefix v pol tp f) in
-               match mode with
-               | Argument.Mode.Unverified -> Out.Plain.print (Explanation ((ts, tp), expl))
-               | Verified ->
-                  let (b, _, _) = Checker_interface.check (Array.to_list !prefix) v f (Pdt.unleaf expl) in
-                  Out.Plain.print (ExplanationCheck ((ts, tp), expl, b))
-               | LaTeX -> Out.Plain.print (ExplanationLatex ((ts, tp), expl, f))
-               | Debug ->
-                  let (b, c_e, c_trace) = Checker_interface.check (Array.to_list !prefix) v f (Pdt.unleaf expl) in
-                  Out.Plain.print (ExplanationCheckDebug ((ts, tp), v, expl, b, c_e, c_trace))
-               | DebugVis -> ()))
-       | Some http_flow ->
-          (let expl = if List.is_empty assignments then
-                        Pdt.unsomes (explain !prefix (Map.empty (module String)) pol tp f)
-                      else (Option.value_exn
-                              (List.fold assignments ~init:None ~f:(fun expl v ->
-                                   let pt = Expl.Pdt.unleaf (Pdt.unsomes (explain !prefix v pol tp f)) in
-                                   Some(Expl.to_gui vars v pt expl)))) in
-           (match mode with
-            | Argument.Mode.Unverified ->
-               let (ertp, lrtp) = (Expl.ertp expl, Expl.lrtp expl) in
-               let slice = Array.sub !prefix ertp (lrtp - ertp + 1) in
-               let json_dbs = List.of_array (Array.mapi slice ~f:(fun i (ts, db) ->
-                                                 Out.Json.db ts (ertp + i) i db f)) in
-               let json_expl_rows = List.of_array
-                                      (Array.mapi slice ~f:(fun i (ts, _) ->
-                                           let ertp_i = ertp + i in
-                                           Out.Json.expl_row ts ertp
-                                             (if Int.equal tp ertp_i then Some (f, expl)
-                                              else None))) in
-               send_data (Out.Json.aggregate tp json_dbs json_expl_rows) http_flow
-            | Verified -> ()
-            | LaTeX
-              | Debug
-              | DebugVis -> ())))
-    else
-      (match mon with
-      (* Timelymon has no get_pos*)
-      | TimelyMon -> ();
-      | _ ->
-      (* get_pos output to keep track of progress *)
-          (if !Etc.debug then traceln "Read current progress";
-          let tp = Emonitor.parse_prog_tp mon line in
-          if Int.equal !last_tp tp then (Eio.Flow.copy_string "Stop\n" r_sink));
-        Fiber.yield ()
-      )
-  done
+    while true do
+      let line = Eio.Buf_read.line r_buf in
+      if !Etc.debug then traceln "Read emonitor line: %s" line;
+      if String.equal line "Stop" then
+        (match http_flow_opt with
+        | None -> raise Exit
+        | Some (http_flow) -> send_data "{\"disconnect\": true}" http_flow;
+                              raise Exit);
+      if Emonitor.is_verdict mon line then
+        (let (tp, ts, assignments) = Emonitor.to_tpts_assignments mon vars vars_tt line in
+        if !Etc.debug then traceln "%s" (Etc.string_list_to_string ~sep:"\n" (List.map assignments ~f:Assignment.to_string));
+        match http_flow_opt with
+        | None ->
+            (List.iter assignments ~f:(fun v ->
+                (* Stdio.printf "expl = %s\n" (Expl.opt_to_string (explain !prefix v pol tp f)); *)
+                let expl = Pdt.unsomes (explain !prefix v pol tp f) in
+                match mode with
+                | Argument.Mode.Unverified -> Out.Plain.print (Explanation ((ts, tp), expl))
+                | Verified ->
+                    let (b, _, _) = Checker_interface.check (Array.to_list !prefix) v f (Pdt.unleaf expl) in
+                    Out.Plain.print (ExplanationCheck ((ts, tp), expl, b))
+                | LaTeX -> Out.Plain.print (ExplanationLatex ((ts, tp), expl, f))
+                | Debug ->
+                    let (b, c_e, c_trace) = Checker_interface.check (Array.to_list !prefix) v f (Pdt.unleaf expl) in
+                    Out.Plain.print (ExplanationCheckDebug ((ts, tp), v, expl, b, c_e, c_trace))
+                | DebugVis -> ()))
+        | Some http_flow ->
+            (let expl = if List.is_empty assignments then
+                          Pdt.unsomes (explain !prefix (Map.empty (module String)) pol tp f)
+                        else (Option.value_exn
+                                (List.fold assignments ~init:None ~f:(fun expl v ->
+                                    let pt = Expl.Pdt.unleaf (Pdt.unsomes (explain !prefix v pol tp f)) in
+                                    Some(Expl.to_gui vars v pt expl)))) in
+            (match mode with
+              | Argument.Mode.Unverified ->
+                let (ertp, lrtp) = (Expl.ertp expl, Expl.lrtp expl) in
+                let slice = Array.sub !prefix ertp (lrtp - ertp + 1) in
+                let json_dbs = List.of_array (Array.mapi slice ~f:(fun i (ts, db) ->
+                                                  Out.Json.db ts (ertp + i) i db f)) in
+                let json_expl_rows = List.of_array
+                                        (Array.mapi slice ~f:(fun i (ts, _) ->
+                                            let ertp_i = ertp + i in
+                                            Out.Json.expl_row ts ertp
+                                              (if Int.equal tp ertp_i then Some (f, expl)
+                                                else None))) in
+                send_data (Out.Json.aggregate tp json_dbs json_expl_rows) http_flow
+              | Verified -> ()
+              | LaTeX
+                | Debug
+                | DebugVis -> ())))
+      else
+        (match mon with
+        (* Timelymon has no get_pos*)
+        | TimelyMon -> ();
+        | _ ->
+        (* get_pos output to keep track of progress *)
+            (if !Etc.debug then traceln "Read current progress";
+            let tp = Emonitor.parse_prog_tp mon line in
+            if Int.equal !last_tp tp then (Eio.Flow.copy_string "Stop\n" r_sink));
+          Fiber.yield ()
+        )
+    done
 
 let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
   let rec step pb_opt =
@@ -912,7 +918,7 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
     | Finished -> if !Etc.debug then traceln "Reached the end of event stream";
                   last_tp := Array.length !prefix - 1;
                   (match mon with
-                      | TimelyMon -> ()
+                      | TimelyMon -> Eio.Flow.close w_sink
                       | MonPoly | VeriMon | DejaVu ->
                             Eio.Flow.copy_string "> get_pos <\n" w_sink);
                   Fiber.yield ()
@@ -927,15 +933,22 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
                             Eio.Flow.copy_string "> get_pos <\n" w_sink);
                       prefix := Array.append !prefix [|(pb.ts, pb.db)|];
                       Fiber.yield ();
-                      step (Some(pb)) in
+                      step (Some(pb)) 
+  in
   step None
 
 let run_emonitor mon mon_path sig_path f_path r_sink w_source proc_mgr extra_args =
   let f_realpath = Filename_unix.realpath (Eio.Path.native_exn f_path) in
   let args = Emonitor.args mon ~mon_path ?sig_path ~f_path:f_realpath in
-  if !Etc.debug then traceln "Running process with: %s" (Etc.string_list_to_string ~sep:" " args);
-  Eio.Process.run ~stdin:w_source ~stdout:r_sink ~stderr:r_sink
-    proc_mgr (args @ extra_args)
+  let cmd = args @ extra_args in
+  if !Etc.debug then traceln "Running process with: %s" (Etc.string_list_to_string ~sep:" " cmd);
+  Fun.protect
+    ~finally:(fun () ->
+      Eio.Flow.close r_sink;   (* close parent write-end of child stdout/stderr *)
+      Eio.Flow.close w_source) (* close parent read-end of child stdin *)
+    (fun () ->
+      Eio.Process.run ~stdin:w_source ~stdout:r_sink ~stderr:r_sink proc_mgr cmd)
+
 
 let exec_fibers mon mon_path sig_path f_path r_sink w_source w_sink r_buf proc_mgr
       extra_args stream prefix last_tp f pol mode vars vars_tt http_flow_opt =
