@@ -54,11 +54,9 @@ module Monitor = struct
       | VeriMon -> (match pref with
                     | Satisfaction -> []
                     | Violation -> ["-negate"])
+
+    | TimelyMon -> ["-m";"1"]
     | DejaVu -> failwith "not yet"
-    | TimelyMon -> (match pref with
-                    | Satisfaction -> ["-w";"1";"-m";"1"]
-                    | Violation -> failwith "not yet"
-                    )
 
 end
 

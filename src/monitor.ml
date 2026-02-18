@@ -219,6 +219,7 @@ let rec stop vars vars_map expl (pol: Polarity.t) = match vars, expl, pol with
      | Existential, VIO
        | Universal, SAT -> Part.for_all part (fun expl -> stop xs vars_map expl pol)
      | _ -> raise (Failure "stop: issue with variable ordering")
+  | _ -> false
 
 let explain prefix v pol tp f =
   (* traceln "assignment: %s" (Assignment.to_string v); *)
@@ -893,26 +894,37 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
               | Debug
               | DebugVis -> ())))
     else
+      (match mon with
+      (* Timelymon has no get_pos*)
+      | TimelyMon -> ();
+      | _ ->
       (* get_pos output to keep track of progress *)
-      (if !Etc.debug then traceln "Read current progress";
-       let tp = Emonitor.parse_prog_tp mon line in
-       if Int.equal !last_tp tp then (Eio.Flow.copy_string "Stop\n" r_sink));
-    Fiber.yield ()
+          (if !Etc.debug then traceln "Read current progress";
+          let tp = Emonitor.parse_prog_tp mon line in
+          if Int.equal !last_tp tp then (Eio.Flow.copy_string "Stop\n" r_sink));
+        Fiber.yield ()
+      )
   done
 
 let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
   let rec step pb_opt =
     match Other_parser.Trace.parse_from_channel stream pb_opt with
     | Finished -> if !Etc.debug then traceln "Reached the end of event stream";
-                  Eio.Flow.copy_string "> get_pos <\n" w_sink;
                   last_tp := Array.length !prefix - 1;
+                  (match mon with
+                      | TimelyMon -> ()
+                      | MonPoly | VeriMon | DejaVu ->
+                            Eio.Flow.copy_string "> get_pos <\n" w_sink);
                   Fiber.yield ()
     | Skipped (pb, msg) -> if !Etc.debug then traceln "Skipped time-point due to: %S" msg;
                            Fiber.yield ();
                            step (Some(pb))
     | Processed pb -> if !Etc.debug then traceln "Processed event with time-stamp %d. Sending it to sink." pb.ts;
                       Eio.Flow.copy_string (Emonitor.write_line mon (pb.ts, pb.db)) w_sink;
-                      Eio.Flow.copy_string "> get_pos <\n" w_sink;
+                      (match mon with
+                      | TimelyMon -> ()
+                      | MonPoly | VeriMon | DejaVu ->
+                            Eio.Flow.copy_string "> get_pos <\n" w_sink);
                       prefix := Array.append !prefix [|(pb.ts, pb.db)|];
                       Fiber.yield ();
                       step (Some(pb)) in

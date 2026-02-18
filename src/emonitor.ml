@@ -28,16 +28,16 @@ let to_tpts_assignments (mon: Argument.Monitor.t) vars vars_tt line =
 let is_verdict (mon: Argument.Monitor.t) line =
   match mon with
   | MonPoly
-    | VeriMon -> String.equal (String.prefix line 1) "@"
+    | TimelyMon
+      | VeriMon -> String.equal (String.prefix line 1) "@"
   | DejaVu -> failwith "missing"
-  | TimelyMon -> failwith "missing"
 
 let parse_prog_tp (mon: Argument.Monitor.t) line =
   match mon with
   | MonPoly
     | VeriMon -> Int.of_string (List.last_exn (String.split line ~on:' '))
   | DejaVu -> failwith "missing"
-  | TimelyMon -> failwith "missing"
+  | TimelyMon -> Int.min_value
 
 let write_line (mon: Argument.Monitor.t) (ts, db) =
   match mon with
@@ -53,4 +53,6 @@ let args (mon: Argument.Monitor.t) ~mon_path ?sig_path ~f_path =
   | VeriMon -> [mon_path; "-sig"; Option.value_exn sig_path; "-formula";
                 f_path; "-nonewlastts"; "-nofilteremptytp"; "-nofilterrel"; "-verified"];
   | DejaVu -> failwith "missing"
-  | TimelyMon -> [mon_path; f_path]
+  | TimelyMon -> 
+    Timelylog.reset();
+    [mon_path;"-s";Option.value_exn sig_path; f_path;]

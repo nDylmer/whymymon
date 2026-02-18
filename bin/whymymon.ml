@@ -116,12 +116,12 @@ module WhyMyMon = struct
         mon_path_ref := Filename_unix.realpath (Argument.Monitor.exec_path !mon_ref);
       match !mon_ref with
       | MonPoly
+      | TimelyMon
         | VeriMon -> let _ = Monitor.exec !interf_ref !mon_ref ~mon_path:!mon_path_ref ~sig_path:!sig_path_ref
                                ~formula_file:!formula_file_ref !stream_ref (Option.value_exn !formula_ref)
                                !pref_ref !mode_ref extra_args in ()
 
       | DejaVu -> failwith "not yet"
-      | TimelyMon -> failwith "not yet"
       | _ -> failwith "not yet"
     with End_of_file -> exit 0
 
