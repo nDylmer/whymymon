@@ -5,6 +5,8 @@
 (*                                                                 *)
 (*  Copyright 2023:                                                *)
 (*  Leonardo Lima (UCPH)                                           *)
+(*  Oskar Eliassen (UCPH)                                          *)
+(*  Niels Dylmer (UCPH)                                            *)
 (*******************************************************************)
 
 open Base
@@ -14,13 +16,12 @@ open Checker_interface
 module Plain : sig
 
   type t =
-    | Explanation of (timestamp * timepoint) * Expl.t
-    | ExplanationCheck of (timestamp * timepoint) * Expl.t * bool
-    | ExplanationLatex of (timestamp * timepoint) * Expl.t * Formula.t
-    | ExplanationLight of (timestamp * timepoint) * Expl.t
+    | Explanation of (timestamp * timepoint) * Assignment.t * Expl.t
+    | ExplanationCheck of (timestamp * timepoint) * Assignment.t * Expl.t * bool
+    | ExplanationLatex of (timestamp * timepoint) * Assignment.t * Expl.t * Formula.t
+    | ExplanationLight of (timestamp * timepoint) * Assignment.t * Expl.t
     | ExplanationCheckDebug of (timestamp * timepoint) * Assignment.t * Expl.t * bool * Checker_proof.t *
                                  Checker_trace.t
-
   val print: t -> unit
 
 end

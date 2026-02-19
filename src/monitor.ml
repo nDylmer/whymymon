@@ -5,6 +5,8 @@
 (*                                                                 *)
 (*  Copyright 2024:                                                *)
 (*  Leonardo Lima (UCPH)                                           *)
+(*  Oskar Eliassen (UCPH)                                          *)
+(*  Niels Dylmer (UCPH)                                            *)
 (*******************************************************************)
 
 open Core
@@ -866,11 +868,11 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                 (* Stdio.printf "expl = %s\n" (Expl.opt_to_string (explain !prefix v pol tp f)); *)
                 let expl = Pdt.unsomes (explain !prefix v pol tp f) in
                 match mode with
-                | Argument.Mode.Unverified -> Out.Plain.print (Explanation ((ts, tp), expl))
+                | Argument.Mode.Unverified -> Out.Plain.print (Explanation ((ts, tp),v, expl))
                 | Verified ->
                     let (b, _, _) = Checker_interface.check (Array.to_list !prefix) v f (Pdt.unleaf expl) in
-                    Out.Plain.print (ExplanationCheck ((ts, tp), expl, b))
-                | LaTeX -> Out.Plain.print (ExplanationLatex ((ts, tp), expl, f))
+                    Out.Plain.print (ExplanationCheck ((ts, tp),v, expl, b))
+                | LaTeX -> Out.Plain.print (ExplanationLatex ((ts, tp), v,  expl, f))
                 | Debug ->
                     let (b, c_e, c_trace) = Checker_interface.check (Array.to_list !prefix) v f (Pdt.unleaf expl) in
                     Out.Plain.print (ExplanationCheckDebug ((ts, tp), v, expl, b, c_e, c_trace))

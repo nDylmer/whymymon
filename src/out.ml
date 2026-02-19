@@ -5,6 +5,8 @@
 (*                                                                 *)
 (*  Copyright 2023:                                                *)
 (*  Leonardo Lima (UCPH)                                           *)
+(*  Oskar Eliassen (UCPH)                                          *)
+(*  Niels Dylmer (UCPH)                                            *)
 (*******************************************************************)
 
 open Base
@@ -15,23 +17,27 @@ open Checker_interface
 module Plain = struct
 
   type t =
-    | Explanation of (timestamp * timepoint) * Expl.t
-    | ExplanationCheck of (timestamp * timepoint) * Expl.t * bool
-    | ExplanationLatex of (timestamp * timepoint) * Expl.t * Formula.t
-    | ExplanationLight of (timestamp * timepoint) * Expl.t
+    | Explanation of (timestamp * timepoint) * Assignment.t * Expl.t
+    | ExplanationCheck of (timestamp * timepoint) * Assignment.t * Expl.t * bool
+    | ExplanationLatex of (timestamp * timepoint) * Assignment.t * Expl.t * Formula.t
+    | ExplanationLight of (timestamp * timepoint) * Assignment.t * Expl.t
     | ExplanationCheckDebug of (timestamp * timepoint) * Assignment.t * Expl.t * bool * Checker_proof.t *
                                  Checker_trace.t
 
   let print = function
-    | Explanation ((ts, tp), e) ->
-       Stdio.printf "%d:%d\nExplanation: \n\n%s\n\n" ts tp (Expl.to_string e)
-    | ExplanationCheck ((ts, tp), e, b) ->
+    | Explanation ((ts, tp),v, e) ->
+       Stdio.printf "%d:%d\nExplanation: \n\n%s\n\n" ts tp (Expl.to_string e);
+       Stdio.printf "\n%s\n" (Assignment.to_string v);
+    | ExplanationCheck ((ts, tp),v, e, b) ->
        Stdio.printf "%d:%d\nExplanation: \n\n%s\n" ts tp (Expl.to_string e);
+       Stdio.printf "\n%s\n" (Assignment.to_string v);
        Stdio.printf "\nChecker output: %B\n\n" b;
-    | ExplanationLatex ((ts, tp), e, f) ->
-       Stdio.printf "%d:%d\nExplanation: \n\n%s\n\n" ts tp (Expl.to_latex f e)
-    | ExplanationLight ((ts, tp), e) ->
-       Stdio.printf "%d:%d\nExplanation: \n\n%s\n\n" ts tp (Expl.to_light_string e)
+    | ExplanationLatex ((ts, tp), v,e, f) ->
+       Stdio.printf "%d:%d\nExplanation: \n\n%s\n\n" ts tp (Expl.to_latex f e);
+       Stdio.printf "\n%s\n" (Assignment.to_string v);
+    | ExplanationLight ((ts, tp),v, e) ->
+       Stdio.printf "%d:%d\nExplanation: \n\n%s\n\n" ts tp (Expl.to_light_string e);
+       Stdio.printf "\n%s\n" (Assignment.to_string v);
     | ExplanationCheckDebug ((ts, tp), v, e, b, c_e, c_t) ->
        Stdio.printf "%d:%d\nExplanation: \n\n%s\n" ts tp (Expl.to_string e);
        Stdio.printf "\n%s\n" (Assignment.to_string v);

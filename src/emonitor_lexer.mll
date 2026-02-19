@@ -7,6 +7,8 @@
 (*  Copyright 2024:                                                *)
 (*  Dmitriy Traytel (UCPH)                                         *)
 (*  Leonardo Lima (UCPH)                                           *)
+(*  Oskar Eliassen (UCPH)                                          *)
+(*  Niels Dylmer (UCPH)                                            *)
 (*******************************************************************)
 
 open Etc

@@ -5,6 +5,8 @@
 (*                                                                 *)
 (*  Copyright 2024:                                                *)
 (*  Leonardo Lima (UCPH)                                           *)
+(*  Oskar Eliassen (UCPH)                                          *)
+(*  Niels Dylmer (UCPH)                                            *)
 (*******************************************************************)
 
 open Base
