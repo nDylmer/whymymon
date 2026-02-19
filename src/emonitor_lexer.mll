@@ -10,6 +10,7 @@
 (*******************************************************************)
 
 open Etc
+open Base
 
 type token = AT | LPA | RPA | COM | SEP | COL | EOF | TRUE | STR of string
 
@@ -27,6 +28,12 @@ let digits = ['0'-'9']+
 let string = (letter | digit | '_' | '[' | ']' | '/' | '-' | '.' | '!')+
 let quoted_string = ([^ '"' '\\'] | '\\' _)*
 
+(* For TimelyMon*)
+let timely_char = [^ '\'']
+let timely_esc = "''"
+let timely_body = (timely_char | timely_esc)*
+
+
 rule token = parse
   | newline                        { Lexing.new_line lexbuf; token lexbuf }
   | blank                          { token lexbuf }
@@ -38,6 +45,8 @@ rule token = parse
   | ":"                            { COL }
   | "#"                            { skip_line lexbuf }
   | "true"                         { TRUE }
+  | '\'' (timely_body as s) "''"   { STR (String.substr_replace_all s ~pattern:"''" ~with_:"'") }
+  | '\'' (timely_body as s) '\''   { STR (String.substr_replace_all s ~pattern:"''" ~with_:"'") }
   | string as s                    { STR s }
   | '"' (quoted_string as s) '"'   { STR s }
   | eof                            { EOF }

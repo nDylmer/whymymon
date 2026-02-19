@@ -20,7 +20,7 @@ more or less simulate very simple timelymon algorithms in the explanation so it 
 to next meeting:
 1. translate csv to log 
 
-2. that you can call timelymon as monitor ( out put does not need to work fully)
+2. that you can call timelymon as monitor ( output does not need to work fully)
 get timelymons output into whymymon
 
 3. understand the explanation part of monpoly
