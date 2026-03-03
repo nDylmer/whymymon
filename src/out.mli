@@ -14,7 +14,7 @@ open Checker_interface
 module Plain : sig
 
   type t =
-    | Explanation of (timestamp * timepoint) * Expl.t
+    | Explanation of (timestamp * timepoint) * Assignment.t * Expl.t
     | ExplanationCheck of (timestamp * timepoint) * Expl.t * bool
     | ExplanationLatex of (timestamp * timepoint) * Expl.t * Formula.t
     | ExplanationLight of (timestamp * timepoint) * Expl.t

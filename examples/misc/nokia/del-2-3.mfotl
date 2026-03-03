@@ -1,2 +1,2 @@
-(delete(x, "db2", y, data) ∧ ¬(data = "[unknown]")) →
+(delete(x, "db2", y, data) ∧ ¬(data = "[unknown]")) AND NOT
   (◊[0,60) (∃u. ∃v. delete(u, "db3", v, data)))

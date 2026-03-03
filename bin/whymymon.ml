@@ -100,6 +100,7 @@ module WhyMyMon = struct
          process_args_rec args
       | ("-log" :: f :: args) ->
          stream_ref := In_channel.create f;
+         Etc.log_is_csv := String.is_suffix f ~suffix:".csv";
          process_args_rec args
       | ("-logstr" :: logs :: args) ->
          logstr_ref := logs;

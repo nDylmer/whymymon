@@ -126,6 +126,49 @@ module Trace = struct
               | Skipped   of Parsebuf.t * string
               | Finished
 
+  module Csv = struct
+    let strip = String.strip
+    let unquote_any s =
+      let len = String.length s in
+      if len >= 2 then
+        let first = s.[0] in
+        let last = s.[len - 1] in
+        if (Char.equal first '\'' && Char.equal last '\'')
+           || (Char.equal first '\"' && Char.equal last '\"')
+        then String.sub s ~pos:1 ~len:(len - 2)
+        else s
+      else s
+
+    let parse_line line =
+      let line = strip line in
+      if String.is_empty line then None
+      else
+        let parts = String.split line ~on:',' |> List.map ~f:strip in
+        match parts with
+        | pred :: rest ->
+            let ts_ref = ref None in
+            let args = ref [] in
+            let handle_part p =
+              let p = strip p in
+              if String.is_prefix p ~prefix:"ts=" then
+                ts_ref := Some (Int.of_string (String.drop_prefix p 3))
+              else if String.is_prefix p ~prefix:"x" then
+                match String.lsplit2 p ~on:'=' with
+                | Some (_, v) -> args := !args @ [unquote_any (strip v)]
+                | None -> ()
+              else
+                ()
+            in
+            List.iter rest ~f:handle_part;
+            (match !ts_ref with
+             | None -> None
+             | Some ts ->
+                 let evt = Db.Event.create pred !args in
+                 let db = Db.add_event (Db.create []) evt in
+                 Some (ts, db))
+        | [] -> None
+  end
+
   let parse_aux (pb: Parsebuf.t) =
     let rec parse_init () =
       match pb.token with
@@ -183,7 +226,21 @@ module Trace = struct
     parse_init ()
 
   let parse_from_channel inc pb_opt =
-    if Option.is_none pb_opt then
+    if !Etc.log_is_csv then
+      match In_channel.input_line inc with
+      | None -> Finished
+      | Some line ->
+          (match Csv.parse_line line with
+           | None ->
+               let lexbuf = Lexing.from_string "" in
+               Skipped (Parsebuf.init lexbuf, "invalid csv line")
+           | Some (ts, db) ->
+               let lexbuf = Lexing.from_string "" in
+               let pb = Parsebuf.init lexbuf in
+               pb.ts <- ts;
+               pb.db <- db;
+               Processed pb)
+    else if Option.is_none pb_opt then
       let lexbuf = Lexing.from_channel inc in
       parse_aux (Parsebuf.init lexbuf)
     else parse_aux (Parsebuf.clean (Option.value_exn pb_opt))

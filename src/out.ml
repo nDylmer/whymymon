@@ -15,7 +15,7 @@ open Checker_interface
 module Plain = struct
 
   type t =
-    | Explanation of (timestamp * timepoint) * Expl.t
+    | Explanation of (timestamp * timepoint) * Assignment.t * Expl.t
     | ExplanationCheck of (timestamp * timepoint) * Expl.t * bool
     | ExplanationLatex of (timestamp * timepoint) * Expl.t * Formula.t
     | ExplanationLight of (timestamp * timepoint) * Expl.t
@@ -23,8 +23,9 @@ module Plain = struct
                                  Checker_trace.t
 
   let print = function
-    | Explanation ((ts, tp), e) ->
-       Stdio.printf "%d:%d\nExplanation: \n\n%s\n\n" ts tp (Expl.to_string e)
+    | Explanation ((ts, tp), v, e) ->
+       Stdio.printf "%d:%d\nExplanation: \n\n%s\n\n" ts tp (Expl.to_string e);
+       Stdio.printf "\n%s\n" (Assignment.to_string v);
     | ExplanationCheck ((ts, tp), e, b) ->
        Stdio.printf "%d:%d\nExplanation: \n\n%s\n" ts tp (Expl.to_string e);
        Stdio.printf "\nChecker output: %B\n\n" b;

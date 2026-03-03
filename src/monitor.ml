@@ -866,7 +866,7 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                 (* Stdio.printf "expl = %s\n" (Expl.opt_to_string (explain !prefix v pol tp f)); *)
                 let expl = Pdt.unsomes (explain !prefix v pol tp f) in
                 match mode with
-                | Argument.Mode.Unverified -> Out.Plain.print (Explanation ((ts, tp), expl))
+                | Argument.Mode.Unverified -> Out.Plain.print (Explanation ((ts, tp), v, expl))
                 | Verified ->
                     let (b, _, _) = Checker_interface.check (Array.to_list !prefix) v f (Pdt.unleaf expl) in
                     Out.Plain.print (ExplanationCheck ((ts, tp), expl, b))
