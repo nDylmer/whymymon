@@ -42,3 +42,7 @@ let encode_db ~tp ~ts (db : Db.t) =
 let encode_next_tp ~ts (db : Db.t) =
   let tp = next_tp () in
   encode_db ~tp ~ts db
+
+
+let watermark_line w =
+  Printf.sprintf ">WATERMARK %d<\n" w

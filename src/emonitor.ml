@@ -10,6 +10,13 @@
 (*******************************************************************)
 
 open Base
+open Etc
+type out_item =
+  | Events of timestamp * Db.t
+  | Watermark of int
+
+
+
 
 (* TODO: Rewrite this using functors/first-class modules to distinguish monitors (or maybe not) *)
 let to_tpts_assignments (mon: Argument.Monitor.t) vars vars_tt line =
@@ -58,3 +65,11 @@ let args (mon: Argument.Monitor.t) ~mon_path ?sig_path ~f_path =
   | TimelyMon -> 
     Timelylog.reset();
     [mon_path;"-s";Option.value_exn sig_path; f_path;]
+
+
+let write_item (mon: Argument.Monitor.t) = function
+  | Events (ts, db) -> write_line mon (ts, db)
+  | Watermark w ->
+    (match mon with
+     | TimelyMon -> Timelylog.watermark_line w
+     | MonPoly | VeriMon | DejaVu -> "")

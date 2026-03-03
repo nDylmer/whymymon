@@ -123,12 +123,21 @@ end
 module Trace = struct
 
   type cursor = Processed of Parsebuf.t
+              | Watermark of int
               | Skipped   of Parsebuf.t * string
               | Finished
 
   module Csv = struct
     let strip = String.strip
+
+    let normalize_pred tok =
+      let tok = strip tok in
+      match String.lsplit2 tok ~on:'\'' with
+      | Some (_, p) -> p
+      | None -> tok
+
     let unquote_any s =
+      let s = strip s in
       let len = String.length s in
       if len >= 2 then
         let first = s.[0] in
@@ -139,34 +148,66 @@ module Trace = struct
         else s
       else s
 
-    let parse_line line =
+    let parse_kv s =
+      match String.lsplit2 (strip s) ~on:'=' with
+      | Some (k, v) -> Some (strip k, strip v)
+      | None -> None
+
+    let parse_x_idx k =
+      if String.is_prefix k ~prefix:"x"
+      then Int.of_string_opt (String.drop_prefix k 1)
+      else None
+
+    let parse_event line =
       let line = strip line in
       if String.is_empty line then None
+      else if String.is_substring line ~substring:"WATERMARK" then None
       else
         let parts = String.split line ~on:',' |> List.map ~f:strip in
         match parts with
-        | pred :: rest ->
-            let ts_ref = ref None in
-            let args = ref [] in
-            let handle_part p =
-              let p = strip p in
-              if String.is_prefix p ~prefix:"ts=" then
-                ts_ref := Some (Int.of_string (String.drop_prefix p 3))
-              else if String.is_prefix p ~prefix:"x" then
-                match String.lsplit2 p ~on:'=' with
-                | Some (_, v) -> args := !args @ [unquote_any (strip v)]
-                | None -> ()
-              else
-                ()
+        | pred_tok :: rest ->
+            let pred = normalize_pred pred_tok in
+            let kvs = List.filter_map rest ~f:parse_kv in
+            let tp_opt =
+              List.Assoc.find kvs ~equal:String.equal "tp"
+              |> Option.bind ~f:Int.of_string_opt
             in
-            List.iter rest ~f:handle_part;
-            (match !ts_ref with
-             | None -> None
-             | Some ts ->
-                 let evt = Db.Event.create pred !args in
-                 let db = Db.add_event (Db.create []) evt in
-                 Some (ts, db))
+            let ts_opt =
+              List.Assoc.find kvs ~equal:String.equal "ts"
+              |> Option.bind ~f:Int.of_string_opt
+            in
+            let args =
+              kvs
+              |> List.filter_map ~f:(fun (k, v) ->
+                     Option.map (parse_x_idx k) ~f:(fun i -> (i, unquote_any v)))
+              |> List.sort ~compare:(fun (i, _) (j, _) -> Int.compare i j)
+              |> List.map ~f:snd
+            in
+            (match tp_opt, ts_opt with
+             | None, _
+             | _, None -> None
+             | Some tp, Some ts ->
+                 (try
+                    let evt = Db.Event.create pred args in
+                    let db = Db.add_event (Db.create []) evt in
+                    Some (tp, ts, db)
+                  with _ -> None))
         | [] -> None
+
+    let parse_line line =
+      match parse_event line with
+             | None -> None
+             | Some (_, ts, db) -> Some (ts, db)
+
+    let parse_watermark line =
+      let line = strip line in
+      if String.is_substring line ~substring:"WATERMARK" then
+        match String.lsplit2 line ~on:' ' with
+        | Some (_, rest) ->
+            let rest = String.filter rest ~f:(fun c -> Char.is_digit c || Char.equal c '-') in
+            Int.of_string_opt rest
+        | None -> None
+      else None
   end
 
   let parse_aux (pb: Parsebuf.t) =
@@ -227,19 +268,23 @@ module Trace = struct
 
   let parse_from_channel inc pb_opt =
     if !Etc.log_is_csv then
+      let pb =
+        match pb_opt with
+        | None -> Parsebuf.init (Lexing.from_string "")
+        | Some pb -> Parsebuf.clean pb
+      in
       match In_channel.input_line inc with
       | None -> Finished
       | Some line ->
-          (match Csv.parse_line line with
+          (match Csv.parse_watermark line with
+           | Some w -> Watermark w
            | None ->
-               let lexbuf = Lexing.from_string "" in
-               Skipped (Parsebuf.init lexbuf, "invalid csv line")
-           | Some (ts, db) ->
-               let lexbuf = Lexing.from_string "" in
-               let pb = Parsebuf.init lexbuf in
-               pb.ts <- ts;
-               pb.db <- db;
-               Processed pb)
+               (match Csv.parse_line line with
+                | None -> Skipped (pb, "csv line skipped")
+                | Some (ts, db) ->
+                    pb.ts <- ts;
+                    pb.db <- db;
+                    Processed pb))
     else if Option.is_none pb_opt then
       let lexbuf = Lexing.from_channel inc in
       parse_aux (Parsebuf.init lexbuf)
@@ -253,6 +298,7 @@ module Trace = struct
     let lexbuf = Lexing.from_string line in
     match parse_aux (Parsebuf.init lexbuf) with
     | Processed pb -> Some (pb.ts, pb.db)
+    | Watermark _ -> None
     | Skipped (_, s) -> None
     | Finished -> None
 
