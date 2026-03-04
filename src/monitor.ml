@@ -915,84 +915,29 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
     done
 
 let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
-  if Poly.(mon = TimelyMon) && !Etc.log_is_csv then
-    let current_tp = ref None in
-    let current_ts = ref None in
-    let current_db = ref (Db.create []) in
-    let flush_current () =
-      match !current_tp, !current_ts with
-      | Some _, Some ts when not (Set.is_empty !current_db) ->
-          prefix := Array.append !prefix [|(ts, !current_db)|];
-          current_tp := None;
-          current_ts := None;
-          current_db := Db.create []
-      | _ -> ()
-    in
-    let rec step_csv () =
-      match In_channel.input_line stream with
-      | None ->
-          flush_current ();
-          if !Etc.debug then traceln "Reached the end of event stream";
-          last_tp := Array.length !prefix - 1;
-          Eio.Flow.close w_sink;
-          Fiber.yield ()
-      | Some line ->
-          let stripped = String.strip line in
-          if not (String.is_empty stripped) then
-            Eio.Flow.copy_string (line ^ "\n") w_sink;
-          (if String.is_substring stripped ~substring:"WATERMARK" then
-             flush_current ()
-           else
-             (match Other_parser.Trace.Csv.parse_event stripped with
-              | None -> ()
-              | Some (tp, ts, db) ->
-                  (match !current_tp with
-                   | None ->
-                       current_tp := Some tp;
-                       current_ts := Some ts;
-                       current_db := db
-                   | Some tp0 when Int.equal tp tp0 ->
-                       current_db := Set.union !current_db db
-                   | Some _ ->
-                       flush_current ();
-                       current_tp := Some tp;
-                       current_ts := Some ts;
-                       current_db := db)));
-          Fiber.yield ();
-          step_csv ()
-    in
-    step_csv ()
-  else
-    let rec step pb_opt =
-      match Other_parser.Trace.parse_from_channel stream pb_opt with
-      | Finished -> if !Etc.debug then traceln "Reached the end of event stream";
-                    last_tp := Array.length !prefix - 1;
-                    (match mon with
-                        | TimelyMon -> Eio.Flow.close w_sink
-                        | MonPoly | VeriMon | DejaVu ->
-                              Eio.Flow.copy_string "> get_pos <\n" w_sink);
-                    Fiber.yield ()
-      | Watermark w ->
-                        if !Etc.debug then traceln "Processed watermark %d." w;
-                        (match mon with
-                         | TimelyMon -> Eio.Flow.copy_string (Timelylog.watermark_line w) w_sink
-                         | MonPoly | VeriMon | DejaVu -> ());
-                        Fiber.yield ();
-                        step pb_opt
-      | Skipped (pb, msg) -> if !Etc.debug then traceln "Skipped time-point due to: %S" msg;
-                             Fiber.yield ();
-                             step (Some(pb))
-      | Processed pb -> if !Etc.debug then traceln "Processed event with time-stamp %d. Sending it to sink." pb.ts;
-                        Eio.Flow.copy_string (Emonitor.write_line mon (pb.ts, pb.db)) w_sink;
-                        (match mon with
-                        | TimelyMon -> ()
-                        | MonPoly | VeriMon | DejaVu ->
-                              Eio.Flow.copy_string "> get_pos <\n" w_sink);
-                        prefix := Array.append !prefix [|(pb.ts, pb.db)|];
-                        Fiber.yield ();
-                        step (Some(pb))
-    in
-    step None
+  let rec step pb_opt =
+    match Other_parser.Trace.parse_from_channel stream pb_opt with
+    | Finished -> if !Etc.debug then traceln "Reached the end of event stream";
+                  last_tp := Array.length !prefix - 1;
+                  (match mon with
+                      | TimelyMon -> Eio.Flow.close w_sink
+                      | MonPoly | VeriMon | DejaVu ->
+                            Eio.Flow.copy_string "> get_pos <\n" w_sink);
+                  Fiber.yield ()
+    | Skipped (pb, msg) -> if !Etc.debug then traceln "Skipped time-point due to: %S" msg;
+                           Fiber.yield ();
+                           step (Some(pb))
+    | Processed pb -> if !Etc.debug then traceln "Processed event with time-stamp %d. Sending it to sink." pb.ts;
+                      Eio.Flow.copy_string (Emonitor.write_line mon (pb.ts, pb.db)) w_sink;
+                      (match mon with
+                      | TimelyMon -> ()
+                      | MonPoly | VeriMon | DejaVu ->
+                            Eio.Flow.copy_string "> get_pos <\n" w_sink);
+                      prefix := Array.append !prefix [|(pb.ts, pb.db)|];
+                      Fiber.yield ();
+                      step (Some(pb)) 
+  in
+  step None
 
 let run_emonitor mon mon_path sig_path f_path r_sink w_source proc_mgr extra_args =
   let f_realpath = Filename_unix.realpath (Eio.Path.native_exn f_path) in

@@ -123,92 +123,8 @@ end
 module Trace = struct
 
   type cursor = Processed of Parsebuf.t
-              | Watermark of int
               | Skipped   of Parsebuf.t * string
               | Finished
-
-  module Csv = struct
-    let strip = String.strip
-
-    let normalize_pred tok =
-      let tok = strip tok in
-      match String.lsplit2 tok ~on:'\'' with
-      | Some (_, p) -> p
-      | None -> tok
-
-    let unquote_any s =
-      let s = strip s in
-      let len = String.length s in
-      if len >= 2 then
-        let first = s.[0] in
-        let last = s.[len - 1] in
-        if (Char.equal first '\'' && Char.equal last '\'')
-           || (Char.equal first '\"' && Char.equal last '\"')
-        then String.sub s ~pos:1 ~len:(len - 2)
-        else s
-      else s
-
-    let parse_kv s =
-      match String.lsplit2 (strip s) ~on:'=' with
-      | Some (k, v) -> Some (strip k, strip v)
-      | None -> None
-
-    let parse_x_idx k =
-      if String.is_prefix k ~prefix:"x"
-      then Int.of_string_opt (String.drop_prefix k 1)
-      else None
-
-    let parse_event line =
-      let line = strip line in
-      if String.is_empty line then None
-      else if String.is_substring line ~substring:"WATERMARK" then None
-      else
-        let parts = String.split line ~on:',' |> List.map ~f:strip in
-        match parts with
-        | pred_tok :: rest ->
-            let pred = normalize_pred pred_tok in
-            let kvs = List.filter_map rest ~f:parse_kv in
-            let tp_opt =
-              List.Assoc.find kvs ~equal:String.equal "tp"
-              |> Option.bind ~f:Int.of_string_opt
-            in
-            let ts_opt =
-              List.Assoc.find kvs ~equal:String.equal "ts"
-              |> Option.bind ~f:Int.of_string_opt
-            in
-            let args =
-              kvs
-              |> List.filter_map ~f:(fun (k, v) ->
-                     Option.map (parse_x_idx k) ~f:(fun i -> (i, unquote_any v)))
-              |> List.sort ~compare:(fun (i, _) (j, _) -> Int.compare i j)
-              |> List.map ~f:snd
-            in
-            (match tp_opt, ts_opt with
-             | None, _
-             | _, None -> None
-             | Some tp, Some ts ->
-                 (try
-                    let evt = Db.Event.create pred args in
-                    let db = Db.add_event (Db.create []) evt in
-                    Some (tp, ts, db)
-                  with _ -> None))
-        | [] -> None
-
-    let parse_line line =
-      match parse_event line with
-             | None -> None
-             | Some (_, ts, db) -> Some (ts, db)
-
-    let parse_watermark line =
-      let line = strip line in
-      if String.is_substring line ~substring:"WATERMARK" then
-        match String.lsplit2 line ~on:' ' with
-        | Some (_, rest) ->
-            let rest = String.filter rest ~f:(fun c -> Char.is_digit c || Char.equal c '-') in
-            Int.of_string_opt rest
-        | None -> None
-      else None
-  end
 
   let parse_aux (pb: Parsebuf.t) =
     let rec parse_init () =
@@ -267,25 +183,7 @@ module Trace = struct
     parse_init ()
 
   let parse_from_channel inc pb_opt =
-    if !Etc.log_is_csv then
-      let pb =
-        match pb_opt with
-        | None -> Parsebuf.init (Lexing.from_string "")
-        | Some pb -> Parsebuf.clean pb
-      in
-      match In_channel.input_line inc with
-      | None -> Finished
-      | Some line ->
-          (match Csv.parse_watermark line with
-           | Some w -> Watermark w
-           | None ->
-               (match Csv.parse_line line with
-                | None -> Skipped (pb, "csv line skipped")
-                | Some (ts, db) ->
-                    pb.ts <- ts;
-                    pb.db <- db;
-                    Processed pb))
-    else if Option.is_none pb_opt then
+    if Option.is_none pb_opt then
       let lexbuf = Lexing.from_channel inc in
       parse_aux (Parsebuf.init lexbuf)
     else parse_aux (Parsebuf.clean (Option.value_exn pb_opt))
@@ -298,11 +196,11 @@ module Trace = struct
     let lexbuf = Lexing.from_string line in
     match parse_aux (Parsebuf.init lexbuf) with
     | Processed pb -> Some (pb.ts, pb.db)
-    | Watermark _ -> None
     | Skipped (_, s) -> None
     | Finished -> None
 
 end
+
 
 module CSV = struct
   type cursor = Processed of Parsebuf.t
@@ -310,4 +208,3 @@ module CSV = struct
               | Watermark of int
               | Finished
 end
-

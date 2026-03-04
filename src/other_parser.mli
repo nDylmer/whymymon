@@ -32,7 +32,6 @@ end
 module Trace : sig
 
   type cursor = Processed of Parsebuf.t
-              | Watermark of int
               | Skipped   of Parsebuf.t * string
               | Finished
 
@@ -41,10 +40,6 @@ module Trace : sig
   val parse_from_string: string -> cursor
 
   val parse_line: string -> (timestamp * Db.t) option
-
-  module Csv : sig
-    val parse_event : string -> (int * timestamp * Db.t) option
-  end
 
 end
 
@@ -55,3 +50,4 @@ module CSV : sig
               | Watermark of int
               | Finished
 end
+
