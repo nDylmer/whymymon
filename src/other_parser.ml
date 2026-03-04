@@ -303,3 +303,11 @@ module Trace = struct
     | Finished -> None
 
 end
+
+module CSV = struct
+  type cursor = Processed of Parsebuf.t
+              | Skipped   of Parsebuf.t * string
+              | Watermark of int
+              | Finished
+end
+

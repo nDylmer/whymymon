@@ -47,3 +47,11 @@ module Trace : sig
   end
 
 end
+
+module CSV : sig
+
+  type cursor = Processed of Parsebuf.t
+              | Skipped   of Parsebuf.t * string
+              | Watermark of int
+              | Finished
+end
