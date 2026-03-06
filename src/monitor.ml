@@ -936,9 +936,14 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
                       prefix := Array.append !prefix [|(pb.ts, pb.db)|];
                       Fiber.yield ();
                       step (Some(pb)) 
+    | Watermark w ->
+                      (match mon with
+                      | TimelyMon -> Eio.Flow.copy_string (Timelylog.watermark_line w) w_sink
+                      | MonPoly | VeriMon | DejaVu -> ());
+                      Fiber.yield ();
+                      step pb_opt
   in
   step None
-
 let run_emonitor mon mon_path sig_path f_path r_sink w_source proc_mgr extra_args =
   let f_realpath = Filename_unix.realpath (Eio.Path.native_exn f_path) in
   let args = Emonitor.args mon ~mon_path ?sig_path ~f_path:f_realpath in

@@ -28,12 +28,14 @@ module Parsebuf = struct
            ; mutable token: Other_lexer.token
            ; mutable pred_sig: Pred.Sig.t option
            ; mutable ts: timestamp
+           ; mutable tp : timepoint
            ; mutable db: Db.t }
 
   let init lexbuf = { lexbuf = lexbuf
                     ; token = Other_lexer.token lexbuf
                     ; pred_sig = None
                     ; ts = -1
+                    ; tp = -1
                     ; db = Db.create [] }
 
   let next pb = pb.token <- Other_lexer.token pb.lexbuf
@@ -44,6 +46,7 @@ module Parsebuf = struct
 
   let clean pb = { pb with pred_sig = None
                          ; ts = -1
+                         ; tp = -1
                          ; db = Db.create [] }
 
   let add_event evt pb = pb.db <- Db.add_event pb.db evt
@@ -119,88 +122,6 @@ module Sig = struct
     with Failure s -> failwith ("error while parsing signature\n " ^ s)
 
 end
-
-module Trace = struct
-
-  type cursor = Processed of Parsebuf.t
-              | Skipped   of Parsebuf.t * string
-              | Finished
-
-  let parse_aux (pb: Parsebuf.t) =
-    let rec parse_init () =
-      match pb.token with
-      | AT -> Parsebuf.next pb; parse_ts ()
-      | EOF -> Finished
-      | t -> Skipped (pb, "expected '@' but found " ^ string_of_token t)
-    and parse_ts () =
-      match pb.token with
-      | STR s -> let ts = try Some (Int.of_string s)
-                          with _ -> None in
-                 (match ts with
-                  | Some ts -> Parsebuf.next pb;
-                               pb.ts <- ts;
-                               parse_db ()
-                  | None -> Skipped (pb, "expected a time-stamp but found " ^ s))
-      | t -> Skipped (pb, "expected a time-stamp but found " ^ string_of_token t)
-    and parse_db () =
-      match pb.token with
-      | STR s -> (match Hashtbl.find Pred.Sig.table s with
-                  | Some props -> (pb.pred_sig <- Some(s, props);
-                                   Parsebuf.next pb;
-                                   (match pb.token with
-                                    | LPA -> Parsebuf.next pb;
-                                             parse_tuple ()
-                                    | t -> Skipped (pb, "expected '(' but found " ^ string_of_token t)))
-                  | None -> Skipped (pb, "predicate " ^ s ^ " was not specified"))
-      | AT -> Processed pb
-      | EOF -> Processed pb
-      | SEP -> Parsebuf.next pb; Processed pb
-      | t -> Skipped (pb, "expected a predicate or '@' but found " ^ string_of_token t)
-    and parse_tuple () =
-      match pb.token with
-      | RPA -> parse_tuple_cont (Queue.create ())
-      | STR s -> Parsebuf.next pb;
-                 parse_tuple_cont (Queue.of_list [s])
-      | t -> Skipped (pb, "expected a tuple or ')' but found " ^ string_of_token t)
-    and parse_tuple_cont q =
-      match pb.token with
-      | RPA -> Parsebuf.next pb;
-               (if Int.equal (Queue.length q) (Parsebuf.arity pb) then
-                  let evt = Db.Event.create (Parsebuf.pred pb) (Queue.to_list q) in
-                  Parsebuf.add_event evt pb;
-                  (match pb.token with
-                   | LPA -> Parsebuf.next pb; parse_tuple ()
-                   | _ -> parse_db ())
-                else Skipped (pb, Printf.sprintf "expected a tuple of arity %d but found %d arguments"
-                                    (Parsebuf.arity pb) (Queue.length q)))
-      | COM -> Parsebuf.next pb;
-               (match pb.token with
-                | STR s -> Parsebuf.next pb;
-                           Queue.enqueue q s;
-                           parse_tuple_cont q
-                | t -> Skipped (pb, "expected a tuple but found " ^ string_of_token t))
-      | t -> Skipped (pb, "expected ',' or ')' but found " ^ string_of_token t) in
-    parse_init ()
-
-  let parse_from_channel inc pb_opt =
-    if Option.is_none pb_opt then
-      let lexbuf = Lexing.from_channel inc in
-      parse_aux (Parsebuf.init lexbuf)
-    else parse_aux (Parsebuf.clean (Option.value_exn pb_opt))
-
-  let parse_from_string log =
-    let lexbuf = Lexing.from_string log in
-    parse_aux (Parsebuf.init lexbuf)
-
-  let parse_line line =
-    let lexbuf = Lexing.from_string line in
-    match parse_aux (Parsebuf.init lexbuf) with
-    | Processed pb -> Some (pb.ts, pb.db)
-    | Skipped (_, s) -> None
-    | Finished -> None
-
-end
-
 
 module CSV = struct
   type cursor = Processed of Parsebuf.t
@@ -282,11 +203,104 @@ module CSV = struct
       else 
         match parse_event line with
         | Some (tp,ts,db) ->
+            pb.tp <- tp;    
             pb.ts <- ts;
             pb.db <- db;
-            
             Processed pb
         | None -> 
           Skipped (pb, "bad csv event")
       
 end
+
+module Trace = struct
+
+  type cursor = Processed of Parsebuf.t
+              | Skipped   of Parsebuf.t * string
+              | Watermark of int
+              | Finished
+
+  let parse_aux (pb: Parsebuf.t) =
+    let rec parse_init () =
+      match pb.token with
+      | AT -> Parsebuf.next pb; parse_ts ()
+      | EOF -> Finished
+      | t -> Skipped (pb, "expected '@' but found " ^ string_of_token t)
+    and parse_ts () =
+      match pb.token with
+      | STR s -> let ts = try Some (Int.of_string s)
+                          with _ -> None in
+                 (match ts with
+                  | Some ts -> Parsebuf.next pb;
+                               pb.ts <- ts;
+                               parse_db ()
+                  | None -> Skipped (pb, "expected a time-stamp but found " ^ s))
+      | t -> Skipped (pb, "expected a time-stamp but found " ^ string_of_token t)
+    and parse_db () =
+      match pb.token with
+      | STR s -> (match Hashtbl.find Pred.Sig.table s with
+                  | Some props -> (pb.pred_sig <- Some(s, props);
+                                   Parsebuf.next pb;
+                                   (match pb.token with
+                                    | LPA -> Parsebuf.next pb;
+                                             parse_tuple ()
+                                    | t -> Skipped (pb, "expected '(' but found " ^ string_of_token t)))
+                  | None -> Skipped (pb, "predicate " ^ s ^ " was not specified"))
+      | AT -> Processed pb
+      | EOF -> Processed pb
+      | SEP -> Parsebuf.next pb; Processed pb
+      | t -> Skipped (pb, "expected a predicate or '@' but found " ^ string_of_token t)
+    and parse_tuple () =
+      match pb.token with
+      | RPA -> parse_tuple_cont (Queue.create ())
+      | STR s -> Parsebuf.next pb;
+                 parse_tuple_cont (Queue.of_list [s])
+      | t -> Skipped (pb, "expected a tuple or ')' but found " ^ string_of_token t)
+    and parse_tuple_cont q =
+      match pb.token with
+      | RPA -> Parsebuf.next pb;
+               (if Int.equal (Queue.length q) (Parsebuf.arity pb) then
+                  let evt = Db.Event.create (Parsebuf.pred pb) (Queue.to_list q) in
+                  Parsebuf.add_event evt pb;
+                  (match pb.token with
+                   | LPA -> Parsebuf.next pb; parse_tuple ()
+                   | _ -> parse_db ())
+                else Skipped (pb, Printf.sprintf "expected a tuple of arity %d but found %d arguments"
+                                    (Parsebuf.arity pb) (Queue.length q)))
+      | COM -> Parsebuf.next pb;
+               (match pb.token with
+                | STR s -> Parsebuf.next pb;
+                           Queue.enqueue q s;
+                           parse_tuple_cont q
+                | t -> Skipped (pb, "expected a tuple but found " ^ string_of_token t))
+      | t -> Skipped (pb, "expected ',' or ')' but found " ^ string_of_token t) in
+    parse_init ()
+
+  let parse_from_channel inc pb_opt =
+    if !Etc.log_is_csv then
+      match CSV.parse_from_channel inc pb_opt with
+      | CSV.Processed pb -> Processed pb
+      | CSV.Skipped (pb, msg) -> Skipped (pb, msg)
+      | CSV.Watermark w -> Watermark w
+      | CSV.Finished -> Finished
+    else if Option.is_none pb_opt then
+      let lexbuf = Lexing.from_channel inc in
+      parse_aux (Parsebuf.init lexbuf)
+    else parse_aux (Parsebuf.clean (Option.value_exn pb_opt))
+
+  let parse_from_string log =
+    let lexbuf = Lexing.from_string log in
+    parse_aux (Parsebuf.init lexbuf)
+
+  let parse_line line =
+    let lexbuf = Lexing.from_string line in
+    match parse_aux (Parsebuf.init lexbuf) with
+    | Processed pb -> Some (pb.ts, pb.db)
+    | Skipped (_, s) -> None
+    | Finished -> None
+    | Watermark w -> None
+
+end
+
+
+
+
