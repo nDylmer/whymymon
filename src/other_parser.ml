@@ -207,4 +207,86 @@ module CSV = struct
               | Skipped   of Parsebuf.t * string
               | Watermark of int
               | Finished
+
+  let predicate (s : string) : string =
+    let s = String.strip s in
+    match String.lsplit2 s ~on:'\'' with
+    | Some (_,p) -> p
+    | _ -> s
+
+  let parse_key_value s =
+  match String.lsplit2 (String.strip s) ~on:'=' with
+  | Some (k, v) -> Some (String.strip k, String.strip v)
+  | None -> None
+
+
+  let parse_event line =
+    let line = String.strip line in
+    if String.is_empty line || String.is_substring line ~substring:"WATERMARK" then None
+    else
+        let parts = String.split line ~on:',' |> List.map ~f:String.strip in
+        match parts with
+        | [] -> None
+        | pred :: rest -> 
+          let key_values = List.filter_map rest ~f:parse_key_value in
+          let tp_optional = 
+              match List.Assoc.find key_values ~equal:String.equal "tp" with
+            | None -> None
+            | Some s -> Int.of_string_opt s
+          in
+          let ts_optional = 
+              match List.Assoc.find key_values ~equal:String.equal "ts" with
+            | None -> None
+            | Some s -> Int.of_string_opt s
+          in
+          let pred = predicate pred in
+          let args =
+            let values =
+              List.filter key_values ~f:(fun (k, _) ->
+              not (String.equal k "tp" || String.equal k "ts"))
+            in
+            List.map values ~f:snd
+          in 
+           (match tp_optional, ts_optional with
+            | Some tp, Some ts ->
+              (try
+                let event = Db.Event.create pred args in
+                let db = Db.add_event (Db.create []) event in
+                Some (tp, ts, db)
+              with _ -> None)
+            | _ -> None)
+        
+  
+  let parse_from_channel inc pb_opt =
+    let pb =
+      if Option.is_none pb_opt then 
+        Parsebuf.init (Lexing.from_string "")
+      else Parsebuf.clean  (Option.value_exn pb_opt)
+    in
+    match In_channel.input_line inc with 
+    | None -> Finished
+    | Some line ->
+      let line = String.strip line in
+      if String.is_empty line then
+        Skipped (pb, "empty line")
+      else if String.is_substring line ~substring:"WATERMARK" then
+        let wm_opt =
+          let digits =
+            String.filter line ~f:(fun x -> Char.is_digit x)
+          in
+          Int.of_string_opt digits
+        in
+        (match wm_opt with
+        | Some w -> Watermark w
+        | None -> Skipped (pb, "bad watermark line"))
+      else 
+        match parse_event line with
+        | Some (tp,ts,db) ->
+            pb.ts <- ts;
+            pb.db <- db;
+            
+            Processed pb
+        | None -> 
+          Skipped (pb, "bad csv event")
+      
 end
