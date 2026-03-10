@@ -22,11 +22,9 @@ let atom_of_dom = function
 
 (* converts one event into one timelymon line*)
 let event_line ~tp ~ts ((pred, args) : Db.Event.t) =
-  let csv_args =
-    args
-    |> List.mapi ~f:(fun i d -> Printf.sprintf "x%d=%s" i (atom_of_dom d))
-    |> String.concat ~sep:", "
-  in
+  let formatted_args = 
+    List.mapi args ~f:(fun i d -> Printf.sprintf "x%d=%s" i (atom_of_dom d)) in
+  let csv_args = String.concat  ~sep:", " formatted_args in
   if String.is_empty csv_args then
     Printf.sprintf "%s, tp=%d, ts=%d\n" pred tp ts
   else
@@ -34,9 +32,9 @@ let event_line ~tp ~ts ((pred, args) : Db.Event.t) =
 
 (* converts all events in one database snapshot to lines, uses same tp and ts for these events*)
 let encode_db ~tp ~ts (db : Db.t) =
-  Set.to_list db
-  |> List.map ~f:(event_line ~tp ~ts)
-  |> String.concat ~sep:""
+  let events = Set.to_list db in
+  let lines = List.map events ~f:(event_line ~tp ~ts) in
+  String.concat ~sep:"" lines
 
 (* gets new tp via next_tp and then calls encode_db *)
 let encode_next_tp ~ts (db : Db.t) =
