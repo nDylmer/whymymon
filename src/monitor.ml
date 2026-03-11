@@ -970,7 +970,7 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
                       | MonPoly | VeriMon | DejaVu ->
                             Eio.Flow.copy_string "> get_pos <\n" w_sink);
                       if (!Etc.log_is_csv) then
-                                              (let prev = !prefix in
+                                              let prev = !prefix in
                                               let n = Array.length prev in
                                               if pb.tp >= n then
                                                 prefix := Array.init (pb.tp + 1) ~f:(fun i ->
@@ -985,7 +985,8 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
                                               | Some _, _ -> prev_ts_opt
                                               | None, _ -> pb.ts
                                               in
-                                              (!prefix).(pb.tp) <- (ts_opt', Set.union prev_db pb.db););
+                                              (!prefix).(pb.tp) <- (ts_opt', Set.union prev_db pb.db)
+                      else
                       prefix := Array.append !prefix [|(pb.ts, pb.db)|];
                       Fiber.yield ();
                       step (Some(pb)) 
