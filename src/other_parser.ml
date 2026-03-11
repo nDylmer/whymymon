@@ -27,15 +27,15 @@ module Parsebuf = struct
   type t = { lexbuf: Lexing.lexbuf
            ; mutable token: Other_lexer.token
            ; mutable pred_sig: Pred.Sig.t option
-           ; mutable ts: timestamp
            ; mutable tp : timepoint
+           ; mutable ts: timestamp option
            ; mutable db: Db.t }
 
   let init lexbuf = { lexbuf = lexbuf
                     ; token = Other_lexer.token lexbuf
                     ; pred_sig = None
-                    ; ts = -1
                     ; tp = -1
+                    ; ts = None
                     ; db = Db.create [] }
 
   let next pb = pb.token <- Other_lexer.token pb.lexbuf
@@ -45,7 +45,7 @@ module Parsebuf = struct
   let pred pb = fst (Option.value_exn pb.pred_sig)
 
   let clean pb = { pb with pred_sig = None
-                         ; ts = -1
+                         ; ts = None
                          ; tp = -1
                          ; db = Db.create [] }
 
@@ -145,7 +145,7 @@ module CSV = struct
     let line = String.strip line in
     if String.is_empty line || String.is_substring line ~substring:"WATERMARK" then None
     else
-        let parts = String.split line ~on:',' |> List.map ~f:String.strip in
+        let parts = List.map (String.split line ~on:',') ~f:String.strip in
         match parts with
         | [] -> None
         | pred :: rest -> 
@@ -168,12 +168,12 @@ module CSV = struct
             in
             List.map values ~f:snd
           in 
-           (match tp_optional, ts_optional with
-            | Some tp, Some ts ->
+           (match tp_optional with
+            | Some tp ->
               (try
                 let event = Db.Event.create pred args in
                 let db = Db.add_event (Db.create []) event in
-                Some (tp, ts, db)
+                Some (tp, ts_optional, db)
               with _ -> None)
             | _ -> None)
         
@@ -202,9 +202,9 @@ module CSV = struct
         | None -> Skipped (pb, "bad watermark line"))
       else 
         match parse_event line with
-        | Some (tp,ts,db) ->
+        | Some (tp,ts_opt,db) ->
             pb.tp <- tp;    
-            pb.ts <- ts;
+            pb.ts <- ts_opt;
             pb.db <- db;
             Processed pb
         | None -> 
@@ -231,7 +231,7 @@ module Trace = struct
                           with _ -> None in
                  (match ts with
                   | Some ts -> Parsebuf.next pb;
-                               pb.ts <- ts;
+                               pb.ts <- Some ts;
                                parse_db ()
                   | None -> Skipped (pb, "expected a time-stamp but found " ^ s))
       | t -> Skipped (pb, "expected a time-stamp but found " ^ string_of_token t)

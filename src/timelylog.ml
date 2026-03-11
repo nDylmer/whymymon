@@ -1,3 +1,12 @@
+(*******************************************************************)
+(*     This is part of WhyMon, and it is distributed under the     *)
+(*     terms of the GNU Lesser General Public License version 3    *)
+(*           (see file LICENSE for more details)                   *)
+(*                                                                 *)
+(*  Copyright 2023:                                                *)
+(*  Oskar Eliassen (UCPH)                                          *)
+(*  Niels Dylmer (UCPH)                                            *)
+(*******************************************************************)
 open Base
 
 (* TimelyMon expects explicit tp and ts per emitted fact line. *)
@@ -21,26 +30,27 @@ let atom_of_dom = function
   | Dom.Float f -> Printf.sprintf "'%s'" (Float.to_string f)
 
 (* converts one event into one timelymon line*)
-let event_line ~tp ~ts ((pred, args) : Db.Event.t) =
+let event_line tp ts_opt ((pred, args) : Db.Event.t) =
   let formatted_args = 
     List.mapi args ~f:(fun i d -> Printf.sprintf "x%d=%s" i (atom_of_dom d)) in
   let csv_args = String.concat  ~sep:", " formatted_args in
-  if String.is_empty csv_args then
-    Printf.sprintf "%s, tp=%d, ts=%d\n" pred tp ts
-  else
-    Printf.sprintf "%s, tp=%d, ts=%d, %s\n" pred tp ts csv_args
+  (match ts_opt with
+  | Some ts -> 
+              if String.is_empty csv_args then
+                Printf.sprintf "%s, tp=%d, ts=%d\n" pred tp ts
+              else
+                Printf.sprintf "%s, tp=%d, ts=%d, %s\n" pred tp ts csv_args
+  | None -> 
+              if String.is_empty csv_args then
+                Printf.sprintf "%s, tp=%d\n" pred tp
+              else
+                Printf.sprintf "%s, tp=%d, %s\n" pred tp csv_args)
 
 (* converts all events in one database snapshot to lines, uses same tp and ts for these events*)
-let encode_db ~tp ~ts (db : Db.t) =
+let encode_db tp ts db =
   let events = Set.to_list db in
-  let lines = List.map events ~f:(event_line ~tp ~ts) in
+  let lines = List.map events ~f:(event_line tp ts) in
   String.concat ~sep:"" lines
-
-(* gets new tp via next_tp and then calls encode_db *)
-let encode_next_tp ~ts (db : Db.t) =
-  let tp = next_tp () in
-  encode_db ~tp ~ts db
-
 
 let watermark_line w =
   Printf.sprintf ">WATERMARK %d<\n" w

@@ -21,6 +21,8 @@ module Quantifier = struct
 
 end
 
+
+
 let do_neg (p_opt: Proof.t option) (pol: Polarity.t) =
   match p_opt, pol with
   | Some (S sp), VIO -> Some (Proof.V (VNeg sp))
@@ -227,7 +229,14 @@ let should_stop vars vars_map mexpl pol =
   try stop vars vars_map mexpl pol with
   | Match_failure _ -> false
 
-  
+let ts_opt prefix tp =
+  match fst (Array.get prefix tp) with
+  | Some ts -> ts
+  | None -> None
+ let ts_of_prefix prefix tp k =
+  match fst (Array.get prefix tp) with
+  | Some ts -> k ts
+  | None -> Pdt.Leaf None 
 
 let explain prefix v pol tp f =
   (* traceln "assignment: %s" (Assignment.to_string v); *)
@@ -348,20 +357,30 @@ let explain prefix v pol tp f =
           | SAT -> Pdt.Leaf None
           | VIO -> Pdt.Leaf (Some (V VPrev0)))
        else
-         (let expl = eval vars vars_map tp pol f in
+          let expl = eval vars vars_map tp pol f in
           let ts = fst (Array.get prefix tp) in
           let ts' = fst (Array.get prefix (tp-1)) in
-          let expl = Pdt.apply1_reduce Proof.opt_equal vars
-                       (fun p_opt -> do_prev i p_opt ts ts' pol) expl in
-          expl)
+          let expl =
+          (match ts,ts' with
+          | Some ts, Some ts' ->
+            Pdt.apply1_reduce Proof.opt_equal vars
+                       (fun p_opt -> do_prev i p_opt ts ts' pol) expl
+          | _ -> Pdt.Leaf None)
+          in expl
     | Next (i, f) ->
-       let expl = eval vars vars_map tp pol f in
-       let ts = fst (Array.get prefix tp) in
-       let ts' = fst (Array.get prefix (tp+1)) in
-       let expl = Pdt.apply1_reduce Proof.opt_equal vars
-                    (fun p_opt -> do_next i p_opt ts ts' pol) expl in
-       expl
-    | Once (i, f) -> (let ts = fst (Array.get prefix tp) in
+      let expl = eval vars vars_map tp pol f in
+      let ts_opt = fst (Array.get prefix tp) in
+      let ts'_opt = fst (Array.get prefix (tp + 1)) in
+      let expl =
+        match ts_opt, ts'_opt with
+        | Some ts, Some ts' ->
+            Pdt.apply1_reduce Proof.opt_equal vars
+              (fun p_opt -> do_next i p_opt ts ts' pol) expl
+        | _ ->
+            Pdt.Leaf None
+      in
+      expl
+    | Once (i, f) -> ts_of_prefix prefix tp (fun ts -> 
                       let l = match Interval.right i with
                         | None -> 0
                         | Some b -> ts - b in
@@ -374,7 +393,7 @@ let explain prefix v pol tp f =
                                                           (Pdt.Leaf (Either.second Fdeque.empty)) vars_map) in
                                (* traceln "ONCE_VIO expl = %s" (Expl.opt_to_string expl); *)
                                expl)
-    | Eventually (i, f) -> (let ts = fst (Array.get prefix tp) in
+    | Eventually (i, f) -> ts_of_prefix prefix tp (fun ts ->
                             let l = ts + Interval.left i in
                             let r = match Interval.right i with
                               | None -> raise (Failure "unbounded eventually")
@@ -387,7 +406,7 @@ let explain prefix v pol tp f =
                                                                 (Pdt.Leaf (Either.second Fdeque.empty)) vars_map) in
                                      (* traceln "EVENTUALLY_VIO expl = %s" (Expl.to_string expl); *)
                                      expl)
-    | Historically (i, f) -> (let ts = fst (Array.get prefix tp) in
+    | Historically (i, f) -> ts_of_prefix prefix tp (fun ts -> 
                               let l = match Interval.right i with
                                 | None -> 0
                                 | Some b -> ts - b in
@@ -400,7 +419,7 @@ let explain prefix v pol tp f =
                               | VIO -> let expl = historically_vio tp (l,r) vars f tp (Pdt.Leaf None) vars_map in
                                        (* traceln "HISTORICALLY_VIO expl = %s" (Expl.to_string expl); *)
                                        expl)
-    | Always (i, f) -> (let ts = fst (Array.get prefix tp) in
+    | Always (i, f) -> ts_of_prefix prefix tp (fun ts ->
                         let l = ts + Interval.left i in
                         let r = match Interval.right i with
                           | None -> raise (Failure "unbounded always")
@@ -413,7 +432,7 @@ let explain prefix v pol tp f =
                         | VIO -> let expl = always_vio tp (l,r) vars f tp (Pdt.Leaf None) vars_map in
                                  (* traceln "ALWAYS_VIO expl = %s" (Expl.to_string expl); *)
                                  expl)
-    | Since (i, f1, f2) -> (let ts = fst (Array.get prefix tp) in
+    | Since (i, f1, f2) -> ts_of_prefix prefix tp (fun ts -> 
                             let l = match Interval.right i with
                               | None -> 0
                               | Some b -> ts - b in
@@ -430,7 +449,7 @@ let explain prefix v pol tp f =
                                             (Pdt.Leaf (Either.second Fdeque.empty)) vars_map) in
                                      (* traceln "SINCE_VIO (l=%d,r=%d) expl = %s" l r (Expl.opt_to_string expl); *)
                                      expl)
-    | Until (i, f1, f2) -> (let ts = fst (Array.get prefix tp) in
+    | Until (i, f1, f2) -> ts_of_prefix prefix tp (fun ts ->
                             let l = ts + Interval.left i in
                             let r = match Interval.right i with
                               | None -> raise (Failure "unbounded until")
@@ -454,7 +473,7 @@ let explain prefix v pol tp f =
     if tp < 0 || r < 0 then
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
     else
-      (let ts = fst (Array.get prefix tp) in
+      ts_of_prefix prefix tp (fun ts->
        if ts < l then
          Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
        else
@@ -477,12 +496,12 @@ let explain prefix v pol tp f =
         (function First p -> First p
                 | Second vps -> Either.first (Some (Proof.V (Proof.VOnce (cur_tp, tp+1, vps))))) mexpl
     else
-      (if r < 0 then
-         Pdt.apply1_reduce either_v_equal vars
+         let ts = fst (Array.get prefix tp) in
+          match ts with
+          | None -> Pdt.apply1_reduce either_v_equal vars
            (function First p -> First p
                    | Second _ -> Either.first (Some (Proof.V (VOnceOut cur_tp)))) mexpl
-       else
-         (let ts = fst (Array.get prefix tp) in
+          | Some ts -> 
           if ts < l then
             (Pdt.apply1_reduce either_v_equal vars
                (function First p -> First p
@@ -502,11 +521,11 @@ let explain prefix v pol tp f =
                               expl mexpl in
                 if stop_either vars vars_map mexpl VIO then mexpl
                 else once_vio cur_tp (l,r) vars f (tp-1) mexpl vars_map)
-             else once_vio cur_tp (l,r) vars f (tp-1) mexpl vars_map)))
+             else once_vio cur_tp (l,r) vars f (tp-1) mexpl vars_map)
 
   (* Eventually *)
   and eventually_sat cur_tp (l,r) vars f tp mexpl vars_map =
-    let ts = fst (Array.get prefix tp) in
+    ts_of_prefix prefix tp (fun ts ->
     if ts > r then
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
     else
@@ -522,14 +541,15 @@ let explain prefix v pol tp f =
                           | Some p -> Some p) expl mexpl in
           if should_stop vars vars_map mexpl SAT then mexpl
           else eventually_sat cur_tp (l,r) vars f (tp+1) mexpl vars_map)
-       else eventually_sat cur_tp (l,r) vars f (tp+1) mexpl vars_map)
+       else eventually_sat cur_tp (l,r) vars f (tp+1) mexpl vars_map))
   and eventually_vio cur_tp (l,r) vars f tp mexpl vars_map =
-    let ts = fst (Array.get prefix tp) in
-    if ts > r then
-      Pdt.apply1_reduce either_v_equal vars
+    let ts = fst (Array.get prefix tp ) in
+    match ts with
+    | None -> 
+        Pdt.apply1_reduce either_v_equal vars
         (function First p -> First p
                 | Second vps -> Either.first (Some (Proof.V (Proof.VEventually (cur_tp, tp-1, vps))))) mexpl
-    else
+    | Some ts ->  
       (if ts >= l && ts <= r then
          (let expl = eval vars vars_map tp VIO f in
           let mexpl = Pdt.apply2_reduce either_v_equal vars
@@ -559,11 +579,12 @@ let explain prefix v pol tp f =
                    | Second _ -> Either.first (Some (Proof.S (SHistoricallyOut cur_tp)))) mexpl
        else
          (let ts = fst (Array.get prefix tp) in
-          if ts < l then
+         match ts with
+         | None -> 
             (Pdt.apply1_reduce either_s_equal vars
                (function First p -> First p
                        | Second sps -> Either.first (Some (Proof.S (Proof.SHistorically (cur_tp, tp+1, sps))))) mexpl)
-          else
+          | Some ts ->
             (if ts <= r then
                (let expl = eval vars vars_map tp SAT f in
                 let mexpl = Pdt.apply2_reduce either_s_equal vars
@@ -584,9 +605,10 @@ let explain prefix v pol tp f =
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
     else
       (let ts = fst (Array.get prefix tp) in
-       if ts < l then
+       match ts with
+       | None ->
          Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
-       else
+       | Some ts ->
          (if ts <= r then
             (let expl = eval vars vars_map tp VIO f in
              let mexpl = Pdt.apply2_reduce Proof.opt_equal vars
@@ -604,11 +626,12 @@ let explain prefix v pol tp f =
   (* Always *)
   and always_sat cur_tp (l,r) vars f tp mexpl vars_map =
     let ts = fst (Array.get prefix tp) in
-    if ts > r then
+    match ts with
+    | None ->
       Pdt.apply1_reduce either_s_equal vars
         (function First p -> First p
                 | Second sps -> Either.first (Some (Proof.S (Proof.SAlways (cur_tp, tp-1, sps))))) mexpl
-    else
+    | Some ts -> 
       (if ts >= l && ts <= r then
          (let expl = eval vars vars_map tp SAT f in
           let mexpl = Pdt.apply2_reduce either_s_equal vars
@@ -626,9 +649,10 @@ let explain prefix v pol tp f =
        else always_sat cur_tp (l,r) vars f (tp+1) mexpl vars_map)
   and always_vio cur_tp (l,r) vars f tp mexpl vars_map =
     let ts = fst (Array.get prefix tp) in
-    if ts > r then
+    match ts with
+    | None ->
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
-    else
+    | Some ts ->
       (if ts >= l && ts <= r then
          (let expl = eval vars vars_map tp VIO f in
           let mexpl = Pdt.apply2_reduce Proof.opt_equal vars
@@ -651,11 +675,12 @@ let explain prefix v pol tp f =
                 | Second _ -> Either.first None) mexpl
     else
       (let ts = fst (Array.get prefix tp) in
-       if ts < l then
+       match ts with
+       | None ->
          Pdt.apply1_reduce either_s_equal vars
            (function First p -> First p
                    | Second _ -> Either.first None) mexpl
-       else
+       | Some ts ->
          (* ts is inside the interval *)
          (if ts <= r then
             (let expl1 = eval vars vars_map tp SAT f1 in
@@ -706,11 +731,12 @@ let explain prefix v pol tp f =
                    | Second _ -> Either.first (Some (Proof.V (VSinceOut cur_tp)))) mexpl
        else
          (let ts = fst (Array.get prefix tp) in
-          if ts < l then
+          match ts with 
+          | None ->
             (Pdt.apply1_reduce either_v_equal vars
                (function First p -> First p
                        | Second vp2s -> Either.first (Some (Proof.V (Proof.VSinceInf (cur_tp, tp+1, vp2s))))) mexpl)
-          else
+          | Some ts ->
             (if ts <= r then
                (let expl1 = eval vars vars_map tp VIO f1 in
                 let expl2 = eval vars vars_map tp VIO f2 in
@@ -750,11 +776,12 @@ let explain prefix v pol tp f =
   (* Until *)
   and until_sat (l,r) vars f1 f2 tp mexpl vars_map =
     let ts = fst (Array.get prefix tp) in
-    if ts > r then
+    match ts with
+    | None ->
       Pdt.apply1_reduce either_s_equal vars
         (function First p -> First p
                 | Second _ -> Either.first None) mexpl
-    else
+    | Some ts ->
       (* ts is inside the interval *)
       (if ts >= l && ts <= r then
          (let expl1 = eval vars vars_map tp SAT f1 in
@@ -794,12 +821,13 @@ let explain prefix v pol tp f =
           if stop_either vars vars_map mexpl SAT then mexpl
           else until_sat (l,r) vars f1 f2 (tp+1) mexpl vars_map))
   and until_vio cur_tp (l,r) vars f1 f2 tp mexpl vars_map =
-    let ts = fst (Array.get prefix tp) in
-    if ts > r then
+    let ts = fst (Array.get prefix tp ) in
+    match ts with
+    | None ->
       Pdt.apply1_reduce either_v_equal2 vars
         (function First p -> First p
                 | Second (_, vp2s) -> Either.first (Some (Proof.V (Proof.VUntilInf (cur_tp, tp-1, vp2s))))) mexpl
-    else
+    | Some ts ->
       (if ts >= l && ts <= r then
          (let expl1 = eval vars vars_map tp VIO f1 in
           let expl2 = eval vars vars_map tp VIO f2 in
@@ -850,6 +878,10 @@ let send_data json http_flow =
   Eio.Flow.copy_string "event: message\n" http_flow;
   Eio.Flow.copy_string (Printf.sprintf "data: %s\n\n" json) http_flow
 
+let checker_trace_of_prefix prefix =
+  List.filter_map (Array.to_list prefix) ~f:(fun (ts_opt, db) ->
+    Option.map ts_opt ~f:(fun ts -> (ts, db)))
+
 let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt last_tp http_flow_opt =
     while true do
       let line = Eio.Buf_read.line r_buf in
@@ -868,14 +900,14 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                 (* Stdio.printf "expl = %s\n" (Expl.opt_to_string (explain !prefix v pol tp f)); *)
                 let expl = Pdt.unsomes (explain !prefix v pol tp f) in
                 match mode with
-                | Argument.Mode.Unverified -> Out.Plain.print (Explanation ((ts, tp),v, expl))
+                | Argument.Mode.Unverified -> Out.Plain.print (Explanation ((tp, ts),v, expl))
                 | Verified ->
-                    let (b, _, _) = Checker_interface.check (Array.to_list !prefix) v f (Pdt.unleaf expl) in
-                    Out.Plain.print (ExplanationCheck ((ts, tp),v, expl, b))
-                | LaTeX -> Out.Plain.print (ExplanationLatex ((ts, tp), v,  expl, f))
+                    let (b, _, _) = Checker_interface.check (checker_trace_of_prefix !prefix) v f (Pdt.unleaf expl) in
+                    Out.Plain.print (ExplanationCheck ((tp, ts),v, expl, b))
+                | LaTeX -> Out.Plain.print (ExplanationLatex ((tp, ts), v,  expl, f))
                 | Debug ->
-                    let (b, c_e, c_trace) = Checker_interface.check (Array.to_list !prefix) v f (Pdt.unleaf expl) in
-                    Out.Plain.print (ExplanationCheckDebug ((ts, tp), v, expl, b, c_e, c_trace))
+                    let (b, c_e, c_trace) = Checker_interface.check (checker_trace_of_prefix !prefix) v f (Pdt.unleaf expl) in
+                    Out.Plain.print (ExplanationCheckDebug ((tp, ts), v, expl, b, c_e, c_trace))
                 | DebugVis -> ()))
         | Some http_flow ->
             (let expl = if List.is_empty assignments then
@@ -927,12 +959,33 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
     | Skipped (pb, msg) -> if !Etc.debug then traceln "Skipped time-point due to: %S" msg;
                            Fiber.yield ();
                            step (Some(pb))
-    | Processed pb -> if !Etc.debug then traceln "Processed event with time-stamp %d. Sending it to sink." pb.ts;
-                      Eio.Flow.copy_string (Emonitor.write_line mon (pb.ts, pb.db)) w_sink;
+    | Processed pb -> (match pb.ts with
+                      | Some ts -> 
+                              if !Etc.debug then traceln "Processed event with time-stamp %d. Sending it to sink." ts;
+                      | None -> 
+                              if !Etc.debug then traceln "Processed event with missing time-stamp. Sending it to sink.");
+                      Eio.Flow.copy_string (Emonitor.write_line mon (pb.tp, pb.ts, pb.db)) w_sink;
                       (match mon with
                       | TimelyMon -> ()
                       | MonPoly | VeriMon | DejaVu ->
                             Eio.Flow.copy_string "> get_pos <\n" w_sink);
+                      if (!Etc.log_is_csv) then
+                                              (let prev = !prefix in
+                                              let n = Array.length prev in
+                                              if pb.tp >= n then
+                                                prefix := Array.init (pb.tp + 1) ~f:(fun i ->
+                                                  if i < n then prev.(i) else (None, Db.create []));
+                                              let (prev_ts_opt, prev_db) = (!prefix).(pb.tp) in
+                                              let ts_opt' =
+                                              match prev_ts_opt, pb.ts with
+                                              | Some ts0, Some ts when not (Int.equal ts0 ts) ->
+                                              if !Etc.debug then
+                                                traceln "Conflicting ts at tp=%d (keep %d, ignore %d)" pb.tp ts0 ts;
+                                              prev_ts_opt
+                                              | Some _, _ -> prev_ts_opt
+                                              | None, _ -> pb.ts
+                                              in
+                                              (!prefix).(pb.tp) <- (ts_opt', Set.union prev_db pb.db););
                       prefix := Array.append !prefix [|(pb.ts, pb.db)|];
                       Fiber.yield ();
                       step (Some(pb)) 

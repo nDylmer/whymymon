@@ -12,7 +12,7 @@
 open Base
 open Etc
 type out_item =
-  | Events of timestamp * Db.t
+  | Events of timepoint * timestamp option * Db.t
   | Watermark of int
 
 
@@ -24,9 +24,9 @@ let to_tpts_assignments (mon: Argument.Monitor.t) vars vars_tt line =
   | MonPoly
     | TimelyMon
       | VeriMon -> let (tp, ts, sss) = Emonitor_parser.Monpoly.parse line in
-                 if List.is_empty sss then (tp, ts, [Assignment.init ()])
+                 if List.is_empty sss then (tp, Some ts, [Assignment.init ()])
                  else
-                   (tp, ts, List.map sss ~f:(fun ss ->
+                   (tp, Some ts, List.map sss ~f:(fun ss ->
                                 List.fold2_exn (List.zip_exn vars vars_tt) ss ~init:(Assignment.init ())
                                   ~f:(fun v (x, x_tt) s -> let d = Dom.string_to_t s x_tt in
                                                            Assignment.add v x d)))
@@ -48,12 +48,16 @@ let parse_prog_tp (mon: Argument.Monitor.t) line =
   | DejaVu -> failwith "missing"
   | TimelyMon -> Int.min_value
 
-let write_line (mon: Argument.Monitor.t) (ts, db) =
+let write_line (mon: Argument.Monitor.t) (tp, ts_opt, db) =
   match mon with
   | MonPoly
-    | VeriMon -> "@" ^ (Int.to_string ts) ^ " " ^ Db.to_monpoly db
+    | VeriMon -> 
+              (match ts_opt with
+              | Some ts -> "@" ^ Int.to_string ts ^ " " ^ Db.to_monpoly db
+              | None -> failwith "MonPoly/VeriMon require timestamp")
   | DejaVu -> failwith "missing"
-  | TimelyMon -> Timelylog.encode_next_tp ~ts db
+  | TimelyMon -> Timelylog.encode_db tp ts_opt db
+            
 
 let args (mon: Argument.Monitor.t) ~mon_path ?sig_path ~f_path =
   match mon with
@@ -68,7 +72,7 @@ let args (mon: Argument.Monitor.t) ~mon_path ?sig_path ~f_path =
 
 
 let write_item (mon: Argument.Monitor.t) = function
-  | Events (ts, db) -> write_line mon (ts, db)
+  | Events (tp, ts, db) -> write_line mon (tp, ts, db)
   | Watermark w ->
     (match mon with
      | TimelyMon -> Timelylog.watermark_line w

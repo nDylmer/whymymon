@@ -17,35 +17,64 @@ open Checker_interface
 module Plain = struct
 
   type t =
-    | Explanation of (timestamp * timepoint) * Assignment.t * Expl.t
-    | ExplanationCheck of (timestamp * timepoint) * Assignment.t * Expl.t * bool
-    | ExplanationLatex of (timestamp * timepoint) * Assignment.t * Expl.t * Formula.t
-    | ExplanationLight of (timestamp * timepoint) * Assignment.t * Expl.t
-    | ExplanationCheckDebug of (timestamp * timepoint) * Assignment.t * Expl.t * bool * Checker_proof.t *
+    | Explanation of (timepoint * timestamp option) * Assignment.t * Expl.t
+    | ExplanationCheck of (timepoint * timestamp option) * Assignment.t * Expl.t * bool
+    | ExplanationLatex of (timepoint * timestamp option) * Assignment.t * Expl.t * Formula.t
+    | ExplanationLight of (timepoint * timestamp option) * Assignment.t * Expl.t
+    | ExplanationCheckDebug of (timepoint * timestamp option) * Assignment.t * Expl.t * bool * Checker_proof.t *
                                  Checker_trace.t
 
   let print = function
-    | Explanation ((ts, tp),v, e) ->
-       Stdio.printf "%d:%d\nExplanation: \n\n%s\n\n" ts tp (Expl.to_string e);
-       Stdio.printf "\n%s\n" (Assignment.to_string v);
-    | ExplanationCheck ((ts, tp),v, e, b) ->
-       Stdio.printf "%d:%d\nExplanation: \n\n%s\n" ts tp (Expl.to_string e);
-       Stdio.printf "\n%s\n" (Assignment.to_string v);
+    | Explanation ((tp,ts_opt),v, e) ->
+      (match ts_opt with
+      | Some ts ->
+                Stdio.printf "tp%d:ts%d\nExplanation: \n\n%s\n\n" tp ts (Expl.to_string e);
+                Stdio.printf "\n%s\n" (Assignment.to_string v);
+      | None -> 
+                Stdio.printf "tp%d\nExplanation: \n\n%s\n\n" tp (Expl.to_string e);
+                Stdio.printf "\n%s\n" (Assignment.to_string v););
+    | ExplanationCheck ((tp,ts_opt),v, e, b) ->
+       (match ts_opt with
+      | Some ts ->
+                Stdio.printf "tp%d:ts%d\nExplanation: \n\n%s\n\n" tp ts (Expl.to_string e);
+                Stdio.printf "\n%s\n" (Assignment.to_string v);
+      | None -> 
+                Stdio.printf "tp%d\nExplanation: \n\n%s\n\n" tp (Expl.to_string e);
+                Stdio.printf "\n%s\n" (Assignment.to_string v););
        Stdio.printf "\nChecker output: %B\n\n" b;
-    | ExplanationLatex ((ts, tp), v,e, f) ->
-       Stdio.printf "%d:%d\nExplanation: \n\n%s\n\n" ts tp (Expl.to_latex f e);
-       Stdio.printf "\n%s\n" (Assignment.to_string v);
-    | ExplanationLight ((ts, tp),v, e) ->
-       Stdio.printf "%d:%d\nExplanation: \n\n%s\n\n" ts tp (Expl.to_light_string e);
-       Stdio.printf "\n%s\n" (Assignment.to_string v);
-    | ExplanationCheckDebug ((ts, tp), v, e, b, c_e, c_t) ->
-       Stdio.printf "%d:%d\nExplanation: \n\n%s\n" ts tp (Expl.to_string e);
-       Stdio.printf "\n%s\n" (Assignment.to_string v);
+    | ExplanationLatex ((tp,ts_opt), v,e, f) ->
+        (match ts_opt with
+      | Some ts ->
+                Stdio.printf "tp%d:ts%d\nExplanation: \n\n%s\n\n" tp ts (Expl.to_latex f e);
+                Stdio.printf "\n%s\n" (Assignment.to_string v);
+      | None -> 
+                Stdio.printf "tp%d\nExplanation: \n\n%s\n\n" tp (Expl.to_latex f e);
+                Stdio.printf "\n%s\n" (Assignment.to_string v););
+    | ExplanationLight ((tp,ts_opt),v, e) ->
+       (match ts_opt with
+      | Some ts ->
+                Stdio.printf "tp%d:ts%d\nExplanation: \n\n%s\n\n" tp ts (Expl.to_light_string e);
+                Stdio.printf "\n%s\n" (Assignment.to_string v);
+      | None -> 
+                Stdio.printf "tp%d\nExplanation: \n\n%s\n\n" tp (Expl.to_light_string e);
+                Stdio.printf "\n%s\n" (Assignment.to_string v););
+    | ExplanationCheckDebug ((tp,ts_opt), v, e, b, c_e, c_t) ->
+       (match ts_opt with
+      | Some ts ->
+                Stdio.printf "tp%d:ts%d\nExplanation: \n\n%s\n\n" tp ts (Expl.to_string e);
+                Stdio.printf "\n%s\n" (Assignment.to_string v);
+      | None -> 
+                Stdio.printf "tp%d\nExplanation: \n\n%s\n\n" tp (Expl.to_string e);
+                Stdio.printf "\n%s\n" (Assignment.to_string v););
        Stdio.printf "\nChecker output: %B\n\n" b;
        Stdio.printf "\n[debug] Checker explanation:\n%s\n\n" (Checker_interface.Checker_proof.to_string "" c_e);
        Stdio.printf "\n[debug] Checker trace:\n%s" (Checker_interface.Checker_trace.to_string c_t);
 
 end
+
+let json_ts = function
+  | Some ts -> Int.to_string ts
+  | None -> "null"
 
 (* TODO: Refactor this module (why are some of these functions here?) *)
 module Json = struct
@@ -71,7 +100,7 @@ module Json = struct
 
   let db ts tp row db f =
     Printf.sprintf "%s{" (String.make 4 ' ') ^
-      Printf.sprintf "%s\"ts\": %d," (String.make 8 ' ') ts ^
+      Printf.sprintf "%s\"ts\": %s," (String.make 8 ' ') (json_ts ts) ^
         Printf.sprintf "%s\"tp\": %d," (String.make 8 ' ') tp ^
           Printf.sprintf "%s\"row\": %d," (String.make 8 ' ') row ^
             Printf.sprintf "%s" (Vis.Dbs.to_json tp db f) ^
@@ -79,7 +108,7 @@ module Json = struct
 
   let expl_row ts tp_offset f_e_opt =
     Printf.sprintf "%s{" (String.make 4 ' ') ^
-      Printf.sprintf "%s\"ts\": %d," (String.make 8 ' ') ts ^
+      Printf.sprintf "%s\"ts\": %s," (String.make 8 ' ') (json_ts ts) ^
         Printf.sprintf "%s\"expl\": {" (String.make 8 ' ') ^
           (match f_e_opt with
            | None -> ""
