@@ -457,12 +457,36 @@ let rec to_monpoly = function
   | Until (i, f, g) -> Printf.sprintf "(%a UNTIL%a %a)" (fun x -> to_monpoly) f
                          (fun x -> Interval.to_string) i (fun x -> to_monpoly) g
 
+let rec to_timelymon = function
+  | TT -> Printf.sprintf "TRUE"
+  | FF -> Printf.sprintf "FALSE"
+  | EqConst (x, c) -> Printf.sprintf "(%s = %s)" x (Dom.to_q_string c)
+  | Predicate (r, trms) -> Printf.sprintf "%s(%s)" r (Term.list_to_string trms)
+  | Neg f -> Printf.sprintf "(NOT %a)" (fun x -> to_timelymon) f
+  | And (f, g) -> Printf.sprintf "(%a AND %a)" (fun x -> to_timelymon) f (fun x -> to_timelymon) g
+  | Or (f, g) -> Printf.sprintf "(%a OR %a)" (fun x -> to_timelymon) f (fun x -> to_timelymon) g
+  | Imp (f, g) -> Printf.sprintf "(%a IMPLIES %a)" (fun x -> to_timelymon) f (fun x -> to_timelymon) g
+  | Iff (f, g) -> Printf.sprintf "(%a EQUIV %a)" (fun x -> to_timelymon) f (fun x -> to_timelymon) g
+  | Exists (x, _, f) -> Printf.sprintf "(EXISTS %s. %a)" x (fun x -> to_timelymon) f
+  | Forall (x, _, f) -> Printf.sprintf "(FORALL %s. %a)" x (fun x -> to_timelymon) f
+  | Prev (i, f) -> Printf.sprintf "(PREVIOUS%a %a)" (fun x -> Interval.to_string) i (fun x -> to_timelymon) f
+  | Next (i, f) -> Printf.sprintf "(NEXT%a %a)" (fun x -> Interval.to_string) i (fun x -> to_timelymon) f
+  | Once (i, f) -> Printf.sprintf "(ONCE%a %a)" (fun x -> Interval.to_string) i (fun x -> to_timelymon) f
+  | Eventually (i, f) -> Printf.sprintf "(EVENTUALLY%a %a)" (fun x -> Interval.to_string) i (fun x -> to_timelymon) f
+  | Historically (i, f) -> Printf.sprintf "(HISTORICALLY%a %a)" (fun x -> Interval.to_string) i
+                             (fun x -> to_timelymon) f
+  | Always (i, f) -> Printf.sprintf "(ALWAYS%a %a)" (fun x -> Interval.to_string) i (fun x -> to_timelymon) f
+  | Since (i, f, g) -> Printf.sprintf "(%a SINCE%a %a)" (fun x -> to_timelymon) f
+                         (fun x -> Interval.to_string) i (fun x -> to_timelymon) g
+  | Until (i, f, g) -> Printf.sprintf "(%a UNTIL%a %a)" (fun x -> to_timelymon) f
+                         (fun x -> Interval.to_string) i (fun x -> to_timelymon) g
+
 let convert (mon: Argument.Monitor.t) f =
   match mon with
   | DejaVu -> failwith "missing"
   | MonPoly -> to_monpoly f
   | VeriMon -> to_monpoly f
-  | TimelyMon -> to_monpoly f
+  | TimelyMon -> to_timelymon f
 
 let rec replace_fv assignment = function
   | TT -> TT

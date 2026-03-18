@@ -25,14 +25,8 @@ type upper_bound =
   | Finite of int
   | Infinity
 
-let latest_watermark = ref Int.min_value
-
 let prefix_ts_opt prefix tp =
   fst (Array.get prefix tp)
-
-let prefix_db prefix tp =
-  snd (Array.get prefix tp)
-
 
 let rec find_left_ts prefix tp =
   if tp < 0 then None
@@ -63,15 +57,7 @@ let interval_may_overlap l r (ts_l, ts_u) =
   match ts_u with
   | Finite u -> ts_l <= r && l <= u
   | Infinity -> ts_l <= r
-let interval_definitely_before l (ts_l, ts_u) =
-  match ts_u with
-  | Finite u -> u < l
-  | Infinity -> false
-let missing_tps prefix =
-  List.filter (List.range 0 (Array.length prefix)) ~f:(fun tp ->
-    match prefix_ts_opt prefix tp, prefix_db prefix tp with
-    | None, db when Set.is_empty db -> true
-    | _ -> false)
+
 let past_candidate_tps prefix tp l r =
   Set.of_list (module Int)
     (List.filter (List.range 0 (tp + 1)) ~f:(fun tp' ->
@@ -417,18 +403,18 @@ let explain prefix v pol tp f =
           | SAT -> Pdt.Leaf None
           | VIO -> Pdt.Leaf (Some (V VPrev0)))
        else
-          let expl = eval vars vars_map tp pol f in
+          let expl = eval vars vars_map (tp - 1) pol f in
           let ts = fst (Array.get prefix tp) in
           let ts' = fst (Array.get prefix (tp-1)) in
           let expl =
           (match ts,ts' with
           | Some ts, Some ts' ->
             Pdt.apply1_reduce Proof.opt_equal vars
-                       (fun p_opt -> do_prev i p_opt ts ts' pol) expl
+                       (fun p_opt -> do_prev i p_opt ts' ts pol) expl
           | _ -> Pdt.Leaf None)
           in expl
     | Next (i, f) ->
-      let expl = eval vars vars_map tp pol f in
+      let expl = eval vars vars_map (tp+1) pol f in
       let ts_opt = fst (Array.get prefix tp) in
       let ts'_opt = fst (Array.get prefix (tp + 1)) in
       let expl =
@@ -978,7 +964,10 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
         | None ->
             (List.iter assignments ~f:(fun v ->
                 (* Stdio.printf "expl = %s\n" (Expl.opt_to_string (explain !prefix v pol tp f)); *)
-                let expl = Pdt.unsomes (explain !prefix v pol tp f) in
+                let expl_opt = explain !prefix v pol tp f in
+                match Expl.Pdt.prune_nones expl_opt with
+                | None -> ()
+                | Some expl ->
                 match mode with
                 | Argument.Mode.Unverified -> Out.Plain.print (Explanation ((tp, ts),v, expl))
                 | Verified ->
@@ -1031,7 +1020,6 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
   let rec step pb_opt =
     match Other_parser.Trace.parse_from_channel stream pb_opt with
     | Finished -> if !Etc.debug then traceln "Reached the end of event stream";
-                  latest_watermark := Int.max_value; 
                   last_tp := Array.length !prefix - 1;
                   (match mon with
                       | TimelyMon -> Eio.Flow.close w_sink
@@ -1076,7 +1064,6 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
                       (match mon with
                       | TimelyMon -> Eio.Flow.copy_string (Timelylog.watermark_line w) w_sink
                       | MonPoly | VeriMon | DejaVu -> ());
-                      latest_watermark := Int.max !latest_watermark w;
                       Fiber.yield ();
                       step pb_opt
   in
