@@ -177,7 +177,9 @@ module Proof = struct
     | SPrev of sp
     | SNext of sp
     | SOnce of int * sp
+    | SOnceInterval of int * int * int option * sp
     | SEventually of int * sp
+    | SEventuallyInterval of int * int * int option * sp
     | SHistorically of int * int * sp Fdeque.t
     | SHistoricallyOut of int
     | SAlways of int * int * sp Fdeque.t
@@ -242,6 +244,10 @@ module Proof = struct
     | SOnce (tp, sp), SOnce (tp', sp')
       | SEventually (tp, sp), SEventually (tp', sp') -> Int.equal tp tp' && s_equal sp sp'
     | SHistoricallyOut tp, SHistoricallyOut tp' -> Int.equal tp tp'
+    | SOnceInterval (tp, l, u, sp), SOnceInterval (tp', l', u', sp') ->
+          Int.equal tp tp' && Int.equal l l' && Option.equal Int.equal u u' && s_equal sp sp'
+    | SEventuallyInterval (tp,l,u,sp), SEventuallyInterval (tp', l', u', sp') ->
+      Int.equal tp tp' && Int.equal l l' && Option.equal Int.equal u u' && s_equal sp sp'
     | SHistorically (tp, lrtp, sps), SHistorically (tp', li', sps') ->
        Int.equal tp tp' && Int.equal lrtp li' &&
          Int.equal (Fdeque.length sps) (Fdeque.length sps') &&
@@ -407,7 +413,9 @@ module Proof = struct
     | SPrev sp -> s_at sp + 1
     | SNext sp -> s_at sp - 1
     | SOnce (tp, _) -> tp
+    | SOnceInterval (tp,_,_,_) -> tp
     | SEventually (tp, _) -> tp
+    | SEventuallyInterval (tp,_,_,_) -> tp
     | SHistorically (tp, _, _) -> tp
     | SHistoricallyOut tp -> tp
     | SAlways (tp, _, _) -> tp
@@ -480,8 +488,16 @@ module Proof = struct
     | SPrev sp -> Printf.sprintf "%sSPrev{%d}\n%s" indent (s_at p) (s_to_string indent' sp)
     | SNext sp -> Printf.sprintf "%sSNext{%d}\n%s" indent (s_at p) (s_to_string indent' sp)
     | SOnce (_, sp) -> Printf.sprintf "%sSOnce{%d}\n%s" indent (s_at p) (s_to_string indent' sp)
+    | SOnceInterval (_, low, up, sp) ->
+          let up_s = match up with Some u -> Int.to_string u | None -> "inf" in
+          Printf.sprintf "%sSOnceInterval{%d}{[%d,%s]}\n%s"
+            indent (s_at p) low up_s (s_to_string indent' sp)
     | SEventually (_, sp) -> Printf.sprintf "%sSEventually{%d}\n%s" indent (s_at p)
                                (s_to_string indent' sp)
+    | SEventuallyInterval (_,low,up,sp) ->
+              let up_s = match up with Some u -> Int.to_string u | None -> "inf" in
+              Printf.sprintf "%sSEventuallyInterval{%d}{[%d,%s]}\n%s"
+                indent (s_at p) low up_s (s_to_string indent' sp)
     | SHistorically (_, etp, sps) -> Printf.sprintf "%sSHistorically{%d}{%d}\n%s" indent (s_at p) etp
                                        (Etc.deque_to_string indent' s_to_string sps)
     | SHistoricallyOut i -> Printf.sprintf "%sSHistoricallyOut{%d}" indent i
@@ -780,7 +796,9 @@ module Proof = struct
     | SPrev sp -> s_ertp sp
     | SNext sp -> s_ertp sp - 1
     | SOnce (_, sp) -> s_ertp sp
+    | SOnceInterval (_,_,_,sp) -> s_ertp sp
     | SEventually (tp, sp) -> min tp (s_ertp sp)
+    | SEventuallyInterval (tp,_,_,sp) -> min tp (s_ertp sp)
     | SHistoricallyOut tp -> tp
     | SHistorically (tp, _, sps)
       | SAlways (tp, _, sps) ->
@@ -853,7 +871,9 @@ module Proof = struct
     | SPrev sp -> s_lrtp sp + 1
     | SNext sp -> s_lrtp sp
     | SOnce (_, sp) -> s_lrtp sp
+    | SOnceInterval (_, _, _, sp) -> s_lrtp sp
     | SEventually (tp, sp) -> max tp (s_lrtp sp)
+    | SEventuallyInterval (tp,_,_,sp) -> max tp (s_lrtp sp)
     | SHistoricallyOut tp -> tp
     | SHistorically (tp, _, sps)
       | SAlways (tp, _, sps) ->
@@ -930,7 +950,9 @@ module Proof = struct
       | SPrev sp -> 1 + s sp
       | SNext sp -> 1 + s sp
       | SOnce (_, sp) -> 1 + s sp
+      | SOnceInterval (_, _, _, sp) -> 1 + s sp
       | SEventually (_, sp) -> 1 + s sp
+      | SEventuallyInterval (_,_,_,sp) -> 1 + s sp
       | SHistorically (_, _, sps) -> 1 + sum s sps
       | SHistoricallyOut _ -> 1
       | SAlways (_, _, sps) -> 1 + sum s sps

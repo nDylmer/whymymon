@@ -20,7 +20,67 @@ module Quantifier = struct
   type t = Existential | Universal
 
 end
+(* approxmiation implementation*)
+type upper_bound = 
+  | Finite of int
+  | Infinity
 
+let latest_watermark = ref Int.min_value
+
+let prefix_ts_opt prefix tp =
+  fst (Array.get prefix tp)
+
+let prefix_db prefix tp =
+  snd (Array.get prefix tp)
+
+
+let rec find_left_ts prefix tp =
+  if tp < 0 then None
+  else
+    match prefix_ts_opt prefix tp with
+    | Some ts -> Some ts
+    | None -> find_left_ts prefix (tp - 1)
+
+let rec find_right_ts prefix tp =
+  if tp >= Array.length prefix then None
+  else
+    match prefix_ts_opt prefix tp with
+    | Some ts -> Some ts
+    | None -> find_right_ts prefix (tp + 1)
+
+let timestamp_interval prefix tp =
+  match prefix_ts_opt prefix tp with
+  | Some ts -> (ts, Finite ts)
+  | None ->
+      let left = find_left_ts prefix (tp - 1) in
+      let right = find_right_ts prefix (tp + 1) in
+      match left, right with
+      | Some l, Some r -> (l, Finite r)
+      | Some l, None -> (l, Infinity)
+      | None, Some r -> (0, Finite r)
+      | None, None -> (0, Infinity)
+let interval_may_overlap l r (ts_l, ts_u) =
+  match ts_u with
+  | Finite u -> ts_l <= r && l <= u
+  | Infinity -> ts_l <= r
+let interval_definitely_before l (ts_l, ts_u) =
+  match ts_u with
+  | Finite u -> u < l
+  | Infinity -> false
+let missing_tps prefix =
+  List.filter (List.range 0 (Array.length prefix)) ~f:(fun tp ->
+    match prefix_ts_opt prefix tp, prefix_db prefix tp with
+    | None, db when Set.is_empty db -> true
+    | _ -> false)
+let past_candidate_tps prefix tp l r =
+  Set.of_list (module Int)
+    (List.filter (List.range 0 (tp + 1)) ~f:(fun tp' ->
+       interval_may_overlap l r (timestamp_interval prefix tp')))
+
+let future_candidate_tps prefix tp l r =
+  Set.of_list (module Int)
+    (List.filter (List.range tp (Array.length prefix)) ~f:(fun tp' ->
+       interval_may_overlap l r (timestamp_interval prefix tp')))
 
 
 let do_neg (p_opt: Proof.t option) (pol: Polarity.t) =
@@ -380,29 +440,39 @@ let explain prefix v pol tp f =
             Pdt.Leaf None
       in
       expl
-    | Once (i, f) -> ts_of_prefix prefix tp (fun ts -> 
-                      let l = match Interval.right i with
-                        | None -> 0
-                        | Some b -> ts - b in
-                      let r = ts - Interval.left i in
-                      match pol with
-                      | SAT -> let expl = once_sat tp (l,r) vars f tp (Pdt.Leaf None) vars_map in
-                               (* traceln "ONCE_SAT expl = %s" (Expl.opt_to_string expl); *)
-                               expl
-                      | VIO -> let expl = Pdt.uneither (once_vio tp (l,r) vars f tp
-                                                          (Pdt.Leaf (Either.second Fdeque.empty)) vars_map) in
-                               (* traceln "ONCE_VIO expl = %s" (Expl.opt_to_string expl); *)
-                               expl)
-    | Eventually (i, f) -> ts_of_prefix prefix tp (fun ts ->
-                            let l = ts + Interval.left i in
-                            let r = match Interval.right i with
-                              | None -> raise (Failure "unbounded eventually")
-                              | Some b -> ts + b in
+    | Once (i, f) ->
+                          let (ts_l, ts_u) = timestamp_interval prefix tp in
+                          (match ts_u with
+                          | Infinity -> failwith "infinite upper bound in ONCE"
+                          | Finite ts_u ->
+                            let l = match Interval.right i with
+                              | None -> 0
+                              | Some b -> ts_l - b in
+                            let r = ts_u - Interval.left i in
+                            let candidates = past_candidate_tps prefix tp l r in
                             match pol with
-                            | SAT -> let expl = eventually_sat tp (l,r) vars f tp (Pdt.Leaf None) vars_map in
+                            | SAT -> let expl = once_sat tp candidates vars f tp (Pdt.Leaf None) vars_map in
+                                      (* traceln "ONCE_SAT expl = %s" (Expl.opt_to_string expl); *)
+                                      expl
+                            | VIO -> let expl = Pdt.uneither (once_vio tp candidates vars f tp
+                                                                (Pdt.Leaf (Either.second Fdeque.empty)) vars_map) in
+                                      (* traceln "ONCE_VIO expl = %s" (Expl.opt_to_string expl); *)
+                                      expl)
+    | Eventually (i, f) ->  
+                            let (ts_l, ts_u) = timestamp_interval prefix tp in
+                            (match ts_u with
+                            | Infinity -> failwith "infinite upper bound in Eventually"
+                            | Finite ts_u ->
+                              let l = ts_l + Interval.left i in
+                              let r = match Interval.right i with
+                              | None -> failwith "unbounded eventually"
+                              | Some b -> ts_u + b in
+                              let candidates = future_candidate_tps prefix tp l r in
+                            match pol with
+                            | SAT -> let expl = eventually_sat tp candidates vars f tp (Pdt.Leaf None) vars_map in
                                      (* traceln "EVENTUALLY_SAT expl = %s" (Expl.to_string expl); *)
                                      expl
-                            | VIO -> let expl = Pdt.uneither (eventually_vio tp (l,r) vars f tp
+                            | VIO -> let expl = Pdt.uneither (eventually_vio tp candidates vars f tp
                                                                 (Pdt.Leaf (Either.second Fdeque.empty)) vars_map) in
                                      (* traceln "EVENTUALLY_VIO expl = %s" (Expl.to_string expl); *)
                                      expl)
@@ -467,90 +537,98 @@ let explain prefix v pol tp f =
                                             (Pdt.Leaf (Either.second (None, Fdeque.empty))) vars_map) in
                                      (* traceln "UNTIL_VIO (l=%d,r=%d) expl = %s" l r (Expl.to_string expl); *)
                                      expl)
-
+  
   (* Once *)
-  and once_sat cur_tp (l,r) vars f tp mexpl vars_map =
-    if tp < 0 || r < 0 then
-      Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
-    else
-      ts_of_prefix prefix tp (fun ts->
-       if ts < l then
-         Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
-       else
-         (if ts <= r then
-            (let expl = eval vars vars_map tp SAT f in
-             let mexpl = Pdt.apply2_reduce Proof.opt_equal vars
-                           (fun sp_opt p_opt ->
-                             match p_opt with
-                             | None -> (match sp_opt with
-                                        | None -> None
-                                        | Some (Proof.S sp) -> Some (Proof.S (SOnce (cur_tp, sp)))
-                                        | _ -> raise (Invalid_argument "found V proof in S case"))
-                             | Some p -> Some p) expl mexpl in
-             if should_stop vars vars_map mexpl SAT then mexpl
-             else once_sat cur_tp (l,r) vars f (tp-1) mexpl vars_map)
-          else once_sat cur_tp (l,r) vars f (tp-1) mexpl vars_map))
-  and once_vio cur_tp (l,r) vars f tp mexpl vars_map =
-    if tp < 0 then
-      Pdt.apply1_reduce either_v_equal vars
-        (function First p -> First p
-                | Second vps -> Either.first (Some (Proof.V (Proof.VOnce (cur_tp, tp+1, vps))))) mexpl
-    else
-         let ts = fst (Array.get prefix tp) in
-          match ts with
-          | None -> Pdt.apply1_reduce either_v_equal vars
-           (function First p -> First p
-                   | Second _ -> Either.first (Some (Proof.V (VOnceOut cur_tp)))) mexpl
-          | Some ts -> 
-          if ts < l then
-            (Pdt.apply1_reduce either_v_equal vars
-               (function First p -> First p
-                       | Second vps -> Either.first (Some (Proof.V (Proof.VOnce (cur_tp, tp+1, vps))))) mexpl)
-          else
-            (if ts <= r then
-               (let expl = eval vars vars_map tp VIO f in
-                let mexpl = Pdt.apply2_reduce either_v_equal vars
-                              (fun vp_opt p_vps ->
-                                match p_vps with
-                                | First p -> First p
-                                | Second vps ->
-                                   (match vp_opt with
-                                    | None -> Either.first None
-                                    | Some (Proof.V vp) -> Either.second (Fdeque.enqueue_front vps vp)
-                                    | _ -> raise (Invalid_argument "found S proof in V case")))
-                              expl mexpl in
-                if stop_either vars vars_map mexpl VIO then mexpl
-                else once_vio cur_tp (l,r) vars f (tp-1) mexpl vars_map)
-             else once_vio cur_tp (l,r) vars f (tp-1) mexpl vars_map)
+  
+  and once_sat cur_tp candidates vars f tp mexpl vars_map =
+  if tp < 0 then
+    Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
+  else if not (Set.mem candidates tp) then
+    once_sat cur_tp candidates vars f (tp - 1) mexpl vars_map
+  else
+    let expl = eval vars vars_map tp SAT f in
+    let mexpl =
+      Pdt.apply2_reduce Proof.opt_equal vars
+        (fun sp_opt p_opt ->
+          match p_opt with
+          | None ->
+              (match sp_opt with
+               | None -> None
+               | Some (Proof.S sp) -> let (low, up) = timestamp_interval prefix cur_tp in
+                   (match up with
+                    | Finite u when Int.equal low u ->
+                        Some (Proof.S (SOnce (cur_tp, sp)))
+                    | Finite u ->
+                        Some (Proof.S (SOnceInterval (cur_tp, low, Some u, sp)))
+                    | Infinity ->
+                        Some (Proof.S (SOnceInterval (cur_tp, low, None, sp))))
+               | _ -> raise (Invalid_argument "found V proof in S case"))
+          | Some p -> Some p)
+        expl mexpl
+    in
+    if should_stop vars vars_map mexpl SAT then mexpl
+    else once_sat cur_tp candidates vars f (tp - 1) mexpl vars_map
+
+  and once_vio cur_tp candidates vars f tp mexpl vars_map =
+  if tp < 0 then
+    Pdt.apply1_reduce either_v_equal vars
+      (function First p -> First p
+              | Second vps -> Either.first (Some (Proof.V (Proof.VOnce (cur_tp, tp+1, vps))))) mexpl
+  else if not (Set.mem candidates tp) then
+    once_vio cur_tp candidates vars f (tp-1) mexpl vars_map
+  else
+    let expl = eval vars vars_map tp VIO f in
+    let mexpl =
+      Pdt.apply2_reduce either_v_equal vars
+        (fun vp_opt p_vps ->
+          match p_vps with
+          | First p -> First p
+          | Second vps ->
+             (match vp_opt with
+              | None -> Either.first None
+              | Some (Proof.V vp) -> Either.second (Fdeque.enqueue_front vps vp)
+              | _ -> raise (Invalid_argument "found S proof in V case")))
+        expl mexpl
+    in
+    if stop_either vars vars_map mexpl VIO then mexpl
+    else once_vio cur_tp candidates vars f (tp-1) mexpl vars_map
+
 
   (* Eventually *)
-  and eventually_sat cur_tp (l,r) vars f tp mexpl vars_map =
-    ts_of_prefix prefix tp (fun ts ->
-    if ts > r then
+  and eventually_sat cur_tp candidates vars f tp mexpl vars_map =
+    let stop_tp = Option.value (Set.max_elt candidates) ~default:(tp - 1) in
+    if tp > stop_tp then
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
+    else if not (Set.mem candidates tp) then 
+      eventually_sat cur_tp candidates vars f (tp+1) mexpl vars_map
     else
-      (if ts >= l && ts <= r then
          (let expl = eval vars vars_map tp SAT f in
           let mexpl = Pdt.apply2_reduce Proof.opt_equal vars
                         (fun sp_opt p_opt ->
                           match p_opt with
                           | None -> (match sp_opt with
                                      | None -> None
-                                     | Some (Proof.S sp) -> Some (Proof.S (SEventually (cur_tp, sp)))
-                                     | _ -> raise (Invalid_argument "found V proof in S case"))
+                                     | Some (Proof.S sp) -> let (low,up) = timestamp_interval prefix cur_tp in
+                                      (match up with
+                                        | Finite u when Int.equal low u ->
+                                            Some (Proof.S (SEventually (cur_tp, sp)))
+                                        | Finite u ->
+                                            Some (Proof.S (SEventuallyInterval (cur_tp, low, Some u, sp)))
+                                        | Infinity ->
+                                            Some (Proof.S (SEventuallyInterval (cur_tp, low, None, sp))))
+                                     |_ -> raise (Invalid_argument "found V proof in S case"))
                           | Some p -> Some p) expl mexpl in
           if should_stop vars vars_map mexpl SAT then mexpl
-          else eventually_sat cur_tp (l,r) vars f (tp+1) mexpl vars_map)
-       else eventually_sat cur_tp (l,r) vars f (tp+1) mexpl vars_map))
-  and eventually_vio cur_tp (l,r) vars f tp mexpl vars_map =
-    let ts = fst (Array.get prefix tp ) in
-    match ts with
-    | None -> 
+          else eventually_sat cur_tp candidates vars f (tp+1) mexpl vars_map)
+  and eventually_vio cur_tp candidates vars f tp mexpl vars_map =
+      let stop_tp = Option.value (Set.max_elt candidates) ~default:(tp - 1) in
+      if tp > stop_tp then
         Pdt.apply1_reduce either_v_equal vars
         (function First p -> First p
                 | Second vps -> Either.first (Some (Proof.V (Proof.VEventually (cur_tp, tp-1, vps))))) mexpl
-    | Some ts ->  
-      (if ts >= l && ts <= r then
+      else if not (Set.mem candidates tp) then
+           eventually_vio cur_tp candidates vars f (tp + 1) mexpl vars_map
+      else
          (let expl = eval vars vars_map tp VIO f in
           let mexpl = Pdt.apply2_reduce either_v_equal vars
                         (fun vp_opt p_vps ->
@@ -563,8 +641,7 @@ let explain prefix v pol tp f =
                               | _ -> raise (Invalid_argument "found S proof in V case")))
                         expl mexpl in
           if stop_either vars vars_map mexpl VIO then mexpl
-          else eventually_vio cur_tp (l,r) vars f (tp+1) mexpl vars_map)
-       else eventually_vio cur_tp (l,r) vars f (tp+1) mexpl vars_map)
+          else eventually_vio cur_tp candidates vars f (tp+1) mexpl vars_map)
 
   (* Historically *)
   and historically_sat cur_tp (l,r) vars f tp mexpl vars_map =
@@ -882,6 +959,9 @@ let checker_trace_of_prefix prefix =
   List.filter_map (Array.to_list prefix) ~f:(fun (ts_opt, db) ->
     Option.map ts_opt ~f:(fun ts -> (ts, db)))
 
+
+
+
 let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt last_tp http_flow_opt =
     while true do
       let line = Eio.Buf_read.line r_buf in
@@ -946,10 +1026,12 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
         )
     done
 
+
 let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
   let rec step pb_opt =
     match Other_parser.Trace.parse_from_channel stream pb_opt with
     | Finished -> if !Etc.debug then traceln "Reached the end of event stream";
+                  latest_watermark := Int.max_value; 
                   last_tp := Array.length !prefix - 1;
                   (match mon with
                       | TimelyMon -> Eio.Flow.close w_sink
@@ -994,6 +1076,7 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
                       (match mon with
                       | TimelyMon -> Eio.Flow.copy_string (Timelylog.watermark_line w) w_sink
                       | MonPoly | VeriMon | DejaVu -> ());
+                      latest_watermark := Int.max !latest_watermark w;
                       Fiber.yield ();
                       step pb_opt
   in
