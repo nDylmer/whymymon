@@ -958,11 +958,11 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
         | Some (http_flow) -> send_data "{\"disconnect\": true}" http_flow;
                               raise Exit);
       if Emonitor.is_verdict mon line then
-        (let (tp, ts, assignments) = Emonitor.to_tpts_assignments mon vars vars_tt line in
-        if !Etc.debug then traceln "%s" (Etc.string_list_to_string ~sep:"\n" (List.map assignments ~f:Assignment.to_string));
+        let (assignments) = Emonitor.to_tpts_assignments mon vars vars_tt line in
+        if !Etc.debug then traceln "%s" (Etc.string_list_to_string ~sep:"\n" (List.map assignments ~f:((fun (_,_,v) -> Assignment.to_string v))));
         match http_flow_opt with
         | None ->
-            (List.iter assignments ~f:(fun v ->
+            (List.iter assignments ~f:(fun (tp,ts, v) ->
                 (* Stdio.printf "expl = %s\n" (Expl.opt_to_string (explain !prefix v pol tp f)); *)
                 let expl_opt = explain !prefix v pol tp f in
                 match Expl.Pdt.prune_nones expl_opt with
@@ -978,8 +978,8 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                     let (b, c_e, c_trace) = Checker_interface.check (checker_trace_of_prefix !prefix) v f (Pdt.unleaf expl) in
                     Out.Plain.print (ExplanationCheckDebug ((tp, ts), v, expl, b, c_e, c_trace))
                 | DebugVis -> ()))
-        | Some http_flow ->
-            (let expl = if List.is_empty assignments then
+        | Some http_flow -> ()
+            (* (let expl = if List.is_empty assignments then
                           Pdt.unsomes (explain !prefix (Map.empty (module String)) pol tp f)
                         else (Option.value_exn
                                 (List.fold assignments ~init:None ~f:(fun expl v ->
@@ -997,11 +997,11 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                                             Out.Json.expl_row ts ertp
                                               (if Int.equal tp ertp_i then Some (f, expl)
                                                 else None))) in
-                send_data (Out.Json.aggregate tp json_dbs json_expl_rows) http_flow
+                send_data (Out.Json.aggregate tp json_dbs json_expl_rows) http_flow 
               | Verified -> ()
               | LaTeX
                 | Debug
-                | DebugVis -> ())))
+                | DebugVis -> ()))) *)
       else
         (match mon with
         (* Timelymon has no get_pos*)

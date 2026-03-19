@@ -24,12 +24,12 @@ let to_tpts_assignments (mon: Argument.Monitor.t) vars vars_tt line =
   | MonPoly
     | TimelyMon
       | VeriMon -> let (tp, ts, sss) = Emonitor_parser.Monpoly.parse line in
-                 if List.is_empty sss then (tp, Some ts, [Assignment.init ()])
+                 if List.is_empty sss then [(tp, Some ts, Assignment.init ())]
                  else
-                   (tp, Some ts, List.map sss ~f:(fun ss ->
-                                List.fold2_exn (List.zip_exn vars vars_tt) ss ~init:(Assignment.init ())
-                                  ~f:(fun v (x, x_tt) s -> let d = Dom.string_to_t s x_tt in
-                                                           Assignment.add v x d)))
+                   List.map sss ~f:(fun ss ->
+                                List.fold2_exn (List.zip_exn vars vars_tt) ss ~init: (tp, Some ts,Assignment.init ())
+                                  ~f:(fun (tp,ts,v) (x, x_tt) s -> let d = Dom.string_to_t s x_tt in
+                                                          ( tp, ts , Assignment.add v x d)))
   | DejaVu -> failwith "missing"
   
 
@@ -37,8 +37,8 @@ let to_tpts_assignments (mon: Argument.Monitor.t) vars vars_tt line =
 let is_verdict (mon: Argument.Monitor.t) line =
   match mon with
   | MonPoly
-    | TimelyMon
-      | VeriMon -> String.equal (String.prefix line 1) "@"
+  | VeriMon -> String.equal (String.prefix line 1) "@"
+  | TimelyMon -> String.equal (String.prefix line 1) "("
   | DejaVu -> failwith "missing"
 
 let parse_prog_tp (mon: Argument.Monitor.t) line =
