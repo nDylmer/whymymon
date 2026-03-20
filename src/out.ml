@@ -31,7 +31,7 @@ module Plain = struct
                 Stdio.printf "tp=%d:ts=%d\nExplanation: \n\n%s\n\n" tp ts (Expl.to_string e);
                 Stdio.printf "\n%s\n" (Assignment.to_string v);
       | Some ts -> 
-                Stdio.printf "tp=%d:ts=[%d,%d]\nExplanation: \n\n%s\n\n" tp ts_l ts (Expl.to_string e);
+                Stdio.printf "tp=%d:ts=[%d-%d]\nExplanation: \n\n%s\n\n" tp ts_l ts (Expl.to_string e);
                 Stdio.printf "\n%s\n" (Assignment.to_string v);
       | None -> 
                 Stdio.printf "tp=%d\nExplanation: \n\n%s\n\n" tp (Expl.to_string e);
@@ -42,7 +42,7 @@ module Plain = struct
                 Stdio.printf "tp=%d:ts=%d\nExplanation: \n\n%s\n\n" tp ts (Expl.to_string e);
                 Stdio.printf "\n%s\n" (Assignment.to_string v);
       | Some ts -> 
-                Stdio.printf "tp=%d:ts=[%d,%d]\nExplanation: \n\n%s\n\n" tp ts_l ts (Expl.to_string e);
+                Stdio.printf "tp=%d:ts=[%d-%d]\nExplanation: \n\n%s\n\n" tp ts_l ts (Expl.to_string e);
                 Stdio.printf "\n%s\n" (Assignment.to_string v);
       | None -> 
                 Stdio.printf "tp=%d\nExplanation: \n\n%s\n\n" tp (Expl.to_string e);
@@ -54,7 +54,7 @@ module Plain = struct
                 Stdio.printf "tp=%d:ts=%d\nExplanation: \n\n%s\n\n" tp ts (Expl.to_latex f e);
                 Stdio.printf "\n%s\n" (Assignment.to_string v);
       | Some ts -> 
-                Stdio.printf "tp=%d:ts=[%d,%d]\nExplanation: \n\n%s\n\n" tp ts_l ts (Expl.to_latex f e);
+                Stdio.printf "tp=%d:ts=[%d-%d]\nExplanation: \n\n%s\n\n" tp ts_l ts (Expl.to_latex f e);
                 Stdio.printf "\n%s\n" (Assignment.to_string v);
       | None -> 
                 Stdio.printf "tp=%d\nExplanation: \n\n%s\n\n" tp (Expl.to_latex f e);
@@ -65,7 +65,7 @@ module Plain = struct
                 Stdio.printf "tp=%d:ts=%d\nExplanation: \n\n%s\n\n" tp ts (Expl.to_light_string e);
                 Stdio.printf "\n%s\n" (Assignment.to_string v);
       | Some ts -> 
-                Stdio.printf "tp=%d:ts=[%d,%d]\nExplanation: \n\n%s\n\n" tp ts_l ts (Expl.to_light_string e);
+                Stdio.printf "tp=%d:ts=[%d-%d]\nExplanation: \n\n%s\n\n" tp ts_l ts (Expl.to_light_string e);
                 Stdio.printf "\n%s\n" (Assignment.to_string v);
       | None -> 
                 Stdio.printf "tp=%d\nExplanation: \n\n%s\n\n" tp (Expl.to_light_string e);
@@ -76,7 +76,7 @@ module Plain = struct
                 Stdio.printf "tp=%d:ts=%d\nExplanation: \n\n%s\n\n" tp ts (Expl.to_string e);
                 Stdio.printf "\n%s\n" (Assignment.to_string v);
       | Some ts -> 
-                Stdio.printf "tp=%d:ts=[%d,%d]\nExplanation: \n\n%s\n\n" tp ts_l ts (Expl.to_string e);
+                Stdio.printf "tp=%d:ts=[%d-%d]\nExplanation: \n\n%s\n\n" tp ts_l ts (Expl.to_string e);
                 Stdio.printf "\n%s\n" (Assignment.to_string v);
       | None -> 
                 Stdio.printf "tp=%d\nExplanation: \n\n%s\n\n" tp (Expl.to_string e);
