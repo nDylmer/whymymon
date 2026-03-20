@@ -21,16 +21,42 @@ type out_item =
 (* TODO: Rewrite this using functors/first-class modules to distinguish monitors (or maybe not) *)
 let to_tpts_assignments (mon: Argument.Monitor.t) vars vars_tt line =
   match mon with
+  | DejaVu -> failwith "not yet"
   | MonPoly
-    | TimelyMon
-      | VeriMon -> let (tp, ts, sss) = Emonitor_parser.Monpoly.parse line in
-                 if List.is_empty sss then [(tp, Some ts, Assignment.init ())]
+  | VeriMon -> let (tp, ts, sss) = Emonitor_parser.Monpoly.parse line in
+                 if List.is_empty sss then [(tp, ts, Assignment.init ())]
                  else
+
                    List.map sss ~f:(fun ss ->
-                                List.fold2_exn (List.zip_exn vars vars_tt) ss ~init: (tp, Some ts,Assignment.init ())
+                                List.fold2_exn (List.zip_exn vars vars_tt) ss ~init: (tp, ts,Assignment.init ())
                                   ~f:(fun (tp,ts,v) (x, x_tt) s -> let d = Dom.string_to_t s x_tt in
                                                           ( tp, ts , Assignment.add v x d)))
-  | DejaVu -> failwith "missing"
+  | TimelyMon -> 
+                let (tp, tp_up_opt, sss) = Emonitor_parser.Timelymon.parse line in
+                match tp_up_opt with
+                | None -> 
+                 if List.is_empty sss then [(tp, None, Assignment.init ())]
+                 else
+
+                   List.map sss ~f:(fun ss ->
+                                List.fold2_exn (List.zip_exn vars vars_tt) ss ~init: (tp, None ,Assignment.init ())
+                                  ~f:(fun (tp,ts,v) (x, x_tt) s -> let d = Dom.string_to_t s x_tt in
+                                                          ( tp, None , Assignment.add v x d)))
+                                                          
+                | Some tp_up ->
+                  let tps = List.range tp (tp_up + 1) in
+                  if List.is_empty sss then
+                  List.map tps ~f:(fun tp -> (tp, None, Assignment.init ()))
+                   else
+                  List.concat_map sss ~f:(fun ss ->
+                    let v =
+                      List.fold2_exn (List.zip_exn vars vars_tt) ss
+                        ~init:(Assignment.init ())
+                        ~f:(fun acc (x, x_tt) s ->
+                          let d = Dom.string_to_t s x_tt in
+                          Assignment.add acc x d)
+                    in
+                    List.map tps ~f:(fun tp -> (tp, None, v)))
   
 
 
