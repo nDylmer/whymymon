@@ -78,11 +78,13 @@ module Checker_interface = struct
     | SPrev sp1 -> SPrev (convert_sp sp1)
     | SNext sp1 -> SNext (convert_sp sp1)
     | SOnce (tp, sp1) -> SOnce (nat_of_int tp, convert_sp sp1)
+    | SOnceInterval (tp,_,_,sp1) -> SOnce (nat_of_int tp, convert_sp sp1)
     | SHistorically (tp, etp, sp2s) ->
        let sp2s' = List.rev(Fdeque.fold sp2s ~init:[] ~f:(fun acc sp2 -> (convert_sp sp2)::acc)) in
        SHistorically (nat_of_int tp, nat_of_int etp, sp2s')
     | SHistoricallyOut tp -> SHistoricallyOut (nat_of_int tp)
     | SEventually (tp, sp1) -> SEventually (nat_of_int tp, convert_sp sp1)
+    | SEventuallyInterval (tp, _,_,sp1) -> SEventually (nat_of_int tp, convert_sp sp1)
     | SAlways (tp, ltp, sp2s) ->
        let sp2s' = List.rev(Fdeque.fold sp2s ~init:[] ~f:(fun acc sp2 -> (convert_sp sp2)::acc)) in
        SAlways (nat_of_int tp, nat_of_int ltp, sp2s')

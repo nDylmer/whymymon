@@ -488,16 +488,14 @@ module Proof = struct
     | SPrev sp -> Printf.sprintf "%sSPrev{%d}\n%s" indent (s_at p) (s_to_string indent' sp)
     | SNext sp -> Printf.sprintf "%sSNext{%d}\n%s" indent (s_at p) (s_to_string indent' sp)
     | SOnce (_, sp) -> Printf.sprintf "%sSOnce{%d}\n%s" indent (s_at p) (s_to_string indent' sp)
-    | SOnceInterval (_, low, up, sp) ->
-          let up_s = match up with Some u -> Int.to_string u | None -> "inf" in
-          Printf.sprintf "%sSOnceInterval{%d}{[%d,%s]}\n%s"
-            indent (s_at p) low up_s (s_to_string indent' sp)
+    | SOnceInterval (_, _, _, sp) ->
+          Printf.sprintf "%sSOnceInterval{%d}\n%s"
+            indent (s_at p) (s_to_string indent' sp)
     | SEventually (_, sp) -> Printf.sprintf "%sSEventually{%d}\n%s" indent (s_at p)
                                (s_to_string indent' sp)
-    | SEventuallyInterval (_,low,up,sp) ->
-              let up_s = match up with Some u -> Int.to_string u | None -> "inf" in
-              Printf.sprintf "%sSEventuallyInterval{%d}{[%d,%s]}\n%s"
-                indent (s_at p) low up_s (s_to_string indent' sp)
+    | SEventuallyInterval (_,_,_,sp) ->
+              Printf.sprintf "%sSEventuallyInterval{%d}\n%s"
+                indent (s_at p) (s_to_string indent' sp)
     | SHistorically (_, etp, sps) -> Printf.sprintf "%sSHistorically{%d}{%d}\n%s" indent (s_at p) etp
                                        (Etc.deque_to_string indent' s_to_string sps)
     | SHistoricallyOut i -> Printf.sprintf "%sSHistoricallyOut{%d}" indent i

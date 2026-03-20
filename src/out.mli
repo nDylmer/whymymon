@@ -15,12 +15,12 @@ open Checker_interface
 
 module Plain : sig
 
-  type t =
-    | Explanation of (timepoint * timestamp option) * Assignment.t * Expl.t
-    | ExplanationCheck of (timepoint * timestamp option) * Assignment.t * Expl.t * bool
-    | ExplanationLatex of (timepoint * timestamp option) * Assignment.t * Expl.t * Formula.t
-    | ExplanationLight of (timepoint * timestamp option) * Assignment.t * Expl.t
-    | ExplanationCheckDebug of (timepoint * timestamp option) * Assignment.t * Expl.t * bool * Checker_proof.t *
+   type t =
+    | Explanation of timepoint * (timestamp * timestamp option) * Assignment.t * Expl.t
+    | ExplanationCheck of timepoint * (timestamp * timestamp option) * Assignment.t * Expl.t * bool
+    | ExplanationLatex of timepoint * (timestamp * timestamp option) * Assignment.t * Expl.t * Formula.t
+    | ExplanationLight of timepoint * (timestamp * timestamp option) * Assignment.t * Expl.t
+    | ExplanationCheckDebug of timepoint * (timestamp * timestamp option) * Assignment.t * Expl.t * bool * Checker_proof.t *
                                  Checker_trace.t
   val print: t -> unit
 

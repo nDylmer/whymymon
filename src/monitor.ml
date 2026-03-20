@@ -945,6 +945,11 @@ let checker_trace_of_prefix prefix =
   List.filter_map (Array.to_list prefix) ~f:(fun (ts_opt, db) ->
     Option.map ts_opt ~f:(fun ts -> (ts, db)))
 
+let interval_ts_option prefix tp =
+  let interval = timestamp_interval prefix tp in
+  match (snd interval) with
+  | Infinity -> (fst interval, None)
+  | Finite ts_u -> (fst interval,Some ts_u)
 
 
 
@@ -969,14 +974,15 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                 | None -> ()
                 | Some expl ->
                 match mode with
-                | Argument.Mode.Unverified -> Out.Plain.print (Explanation ((tp, ts),v, expl))
+                | Argument.Mode.Unverified -> Out.Plain.print (Explanation (tp, (interval_ts_option !prefix tp),v, expl))
                 | Verified ->
-                    let (b, _, _) = Checker_interface.check (checker_trace_of_prefix !prefix) v f (Pdt.unleaf expl) in
-                    Out.Plain.print (ExplanationCheck ((tp, ts),v, expl, b))
-                | LaTeX -> Out.Plain.print (ExplanationLatex ((tp, ts), v,  expl, f))
+                    let (b, _, _) = 
+                    Checker_interface.check (checker_trace_of_prefix !prefix) v f (Pdt.unleaf expl) in
+                    Out.Plain.print (ExplanationCheck (tp, (interval_ts_option !prefix tp),v, expl, b))
+                | LaTeX -> Out.Plain.print (ExplanationLatex (tp, (interval_ts_option !prefix tp), v,  expl, f))
                 | Debug ->
                     let (b, c_e, c_trace) = Checker_interface.check (checker_trace_of_prefix !prefix) v f (Pdt.unleaf expl) in
-                    Out.Plain.print (ExplanationCheckDebug ((tp, ts), v, expl, b, c_e, c_trace))
+                    Out.Plain.print (ExplanationCheckDebug (tp, (interval_ts_option !prefix tp), v, expl, b, c_e, c_trace))
                 | DebugVis -> ()))
         | Some http_flow -> ()
             (* (let expl = if List.is_empty assignments then
