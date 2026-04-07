@@ -927,9 +927,11 @@ let send_data json http_flow =
   Eio.Flow.copy_string "event: message\n" http_flow;
   Eio.Flow.copy_string (Printf.sprintf "data: %s\n\n" json) http_flow
 
-let checker_trace_of_prefix prefix =
-  List.filter_map (Array.to_list prefix) ~f:(fun (ts_opt, db) ->
-    Option.map ts_opt ~f:(fun ts -> (ts, db)))
+let checker_interval_fix prefix =
+  List.mapi (Array.to_list prefix) ~f:(fun i (ts_opt, db) ->
+    match ts_opt with
+    | Some ts -> (ts,db)
+    | None -> (fst (timestamp_interval prefix i),db))
 
 let interval_ts_option prefix tp =
   let interval = timestamp_interval prefix tp in
@@ -963,11 +965,11 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                 | Argument.Mode.Unverified -> Out.Plain.print (Explanation (tp, (interval_ts_option !prefix tp),v, expl))
                 | Verified ->
                     let (b, _, _) = 
-                    Checker_interface.check (checker_trace_of_prefix !prefix) v f (Pdt.unleaf expl) in
+                    Checker_interface.check (checker_interval_fix !prefix) v f (Pdt.unleaf expl) in
                     Out.Plain.print (ExplanationCheck (tp, (interval_ts_option !prefix tp),v, expl, b))
                 | LaTeX -> Out.Plain.print (ExplanationLatex (tp, (interval_ts_option !prefix tp), v,  expl, f))
                 | Debug ->
-                    let (b, c_e, c_trace) = Checker_interface.check (checker_trace_of_prefix !prefix) v f (Pdt.unleaf expl) in
+                    let (b, c_e, c_trace) = Checker_interface.check (checker_interval_fix !prefix) v f (Pdt.unleaf expl) in
                     Out.Plain.print (ExplanationCheckDebug (tp, (interval_ts_option !prefix tp), v, expl, b, c_e, c_trace))
                 | DebugVis -> ()))
         | Some http_flow -> ()
