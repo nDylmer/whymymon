@@ -82,7 +82,9 @@ let write_line (mon: Argument.Monitor.t) (tp, ts_opt, db) =
               | Some ts -> "@" ^ Int.to_string ts ^ " " ^ Db.to_monpoly db
               | None -> failwith "MonPoly/VeriMon require timestamp")
   | DejaVu -> failwith "missing"
-  | TimelyMon -> Timelylog.encode_db tp ts_opt db
+  | TimelyMon -> 
+    let tp = if !Etc.log_is_csv then tp else Timelylog.next_tp() in
+    Timelylog.encode_db tp ts_opt db
             
 
 let args (mon: Argument.Monitor.t) ~mon_path ?sig_path ~f_path =
