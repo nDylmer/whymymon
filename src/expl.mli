@@ -60,9 +60,7 @@ module Proof : sig
     | SPrev of sp
     | SNext of sp
     | SOnce of int * sp
-    | SOnceInterval of int * int * int option * sp
     | SEventually of int * sp
-    | SEventuallyInterval of int * int * int option * sp
     | SHistorically of int * int * sp Fdeque.t
     | SHistoricallyOut of int
     | SAlways of int * int * sp Fdeque.t

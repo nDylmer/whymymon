@@ -540,14 +540,7 @@ let explain prefix v pol tp f =
           | None ->
               (match sp_opt with
                | None -> None
-               | Some (Proof.S sp) -> let (low, up) = timestamp_interval prefix cur_tp in
-                   (match up with
-                    | Finite u when Int.equal low u ->
-                        Some (Proof.S (SOnce (cur_tp, sp)))
-                    | Finite u ->
-                        Some (Proof.S (SOnceInterval (cur_tp, low, Some u, sp)))
-                    | Infinity ->
-                        Some (Proof.S (SOnceInterval (cur_tp, low, None, sp))))
+               | Some (Proof.S sp) -> Some (Proof.S (SOnce (cur_tp, sp)))
                | _ -> raise (Invalid_argument "found V proof in S case"))
           | Some p -> Some p)
         expl mexpl
@@ -594,14 +587,7 @@ let explain prefix v pol tp f =
                           match p_opt with
                           | None -> (match sp_opt with
                                      | None -> None
-                                     | Some (Proof.S sp) -> let (low,up) = timestamp_interval prefix cur_tp in
-                                      (match up with
-                                        | Finite u when Int.equal low u ->
-                                            Some (Proof.S (SEventually (cur_tp, sp)))
-                                        | Finite u ->
-                                            Some (Proof.S (SEventuallyInterval (cur_tp, low, Some u, sp)))
-                                        | Infinity ->
-                                            Some (Proof.S (SEventuallyInterval (cur_tp, low, None, sp))))
+                                     | Some (Proof.S sp) -> Some (Proof.S (SEventually (cur_tp, sp)))
                                      |_ -> raise (Invalid_argument "found V proof in S case"))
                           | Some p -> Some p) expl mexpl in
           if should_stop vars vars_map mexpl SAT then mexpl
