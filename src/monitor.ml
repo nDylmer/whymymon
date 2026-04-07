@@ -157,32 +157,48 @@ let maps_to_string maps =
                                            List.map (Map.to_alist map) ~f:(fun (k, v) ->
                                                Printf.sprintf "%s -> %s\n" k (Dom.to_string v)))))
 
-let do_prev i (p_opt: Proof.t option) ts ts' (pol: Polarity.t) =
+let do_prev i (p_opt: Proof.t option) (prev_l,prev_u) (cur_l,cur_u) (pol: Polarity.t) =
+  match cur_u with
+  | Infinity -> Proof.Size.minp_list []
+  | Finite cur_u ->
+    let l = match Interval.right i with 
+    | None -> 0 
+    | Some b -> cur_l - b in
+    let r = cur_u - Interval.left i in
+    let is_candidate = interval_may_overlap l r (prev_l, prev_u) in
   Proof.Size.minp_list
     (match p_opt, pol with
-     | Some (S sp), SAT -> if Interval.mem (ts' - ts) i then
+     | Some (S sp), SAT -> if is_candidate then
                              [Proof.S (SPrev sp)]
                            else []
-     | Some (V vp), VIO -> if Interval.below (ts' - ts) i then
+     | Some (V vp), VIO -> (if not is_candidate then
+                           (if prev_l > r then
                              [Proof.V (VPrevOutL ((Proof.v_at vp)+1))]
                            else
-                             (if (Interval.above (ts' - ts) i) then
-                                [Proof.V (VPrevOutR ((Proof.v_at vp)+1))]
+                                [Proof.V (VPrevOutR ((Proof.v_at vp)+1))])
                               else [V (VPrev vp)])
      | _ -> [])
 
-let do_next i (p_opt: Proof.t option) ts ts' (pol: Polarity.t) =
+let do_next i (p_opt: Proof.t option) (cur_l,cur_u) (next_l,next_u)  (pol: Polarity.t) =
+   match cur_u with
+  | Infinity -> Proof.Size.minp_list []
+  | Finite cur_u ->
+    let l = cur_l + Interval.left i in
+    let r = match Interval.right i with
+    | None -> failwith "unbounded Next"
+    | Some b -> cur_u + b in
+  let is_candidate = interval_may_overlap l r (next_l,next_u) in
   Proof.Size.minp_list
     (match p_opt, pol with
-     | Some (S sp), SAT -> if Interval.mem (ts' - ts) i then
+     | Some (S sp), SAT -> if is_candidate then
                              [S (SNext sp)]
                            else []
-     | Some (V vp), VIO -> if Interval.below (ts' - ts) i then
+     | Some (V vp), VIO -> (if not is_candidate then
+                           (if next_l > r then
                              [V (VNextOutL ((Proof.v_at vp)-1))]
                            else
-                             (if (Interval.above (ts' - ts) i) then
-                                [V (VNextOutR ((Proof.v_at vp)-1))]
-                              else [V (VNext vp)])
+                                [V (VNextOutR ((Proof.v_at vp)-1))])
+                           else [V (VNext vp)])
      | _ -> [])
 
 let rec match_terms trms ds map =
@@ -404,26 +420,19 @@ let explain prefix v pol tp f =
           | VIO -> Pdt.Leaf (Some (V VPrev0)))
        else
           let expl = eval vars vars_map (tp - 1) pol f in
-          let ts = fst (Array.get prefix tp) in
-          let ts' = fst (Array.get prefix (tp-1)) in
+          let (cur_l, cur_u) = timestamp_interval prefix tp in 
+          let (prev_l,prev_u) = timestamp_interval prefix (tp-1) in
           let expl =
-          (match ts,ts' with
-          | Some ts, Some ts' ->
             Pdt.apply1_reduce Proof.opt_equal vars
-                       (fun p_opt -> do_prev i p_opt ts' ts pol) expl
-          | _ -> Pdt.Leaf None)
+                       (fun p_opt -> do_prev i p_opt (prev_l,prev_u) (cur_l,cur_u) pol) expl
           in expl
     | Next (i, f) ->
       let expl = eval vars vars_map (tp+1) pol f in
-      let ts_opt = fst (Array.get prefix tp) in
-      let ts'_opt = fst (Array.get prefix (tp + 1)) in
+      let (cur_l,cur_u) = timestamp_interval prefix tp in
+      let (next_l,next_u) = timestamp_interval prefix (tp+1) in
       let expl =
-        match ts_opt, ts'_opt with
-        | Some ts, Some ts' ->
             Pdt.apply1_reduce Proof.opt_equal vars
-              (fun p_opt -> do_next i p_opt ts ts' pol) expl
-        | _ ->
-            Pdt.Leaf None
+              (fun p_opt -> do_next i p_opt (cur_l,cur_u) (next_l,next_u) pol) expl
       in
       expl
     | Once (i, f) ->
