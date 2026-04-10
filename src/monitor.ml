@@ -53,10 +53,14 @@ let timestamp_interval prefix tp =
       | Some l, None -> (l, Infinity)
       | None, Some r -> (0, Finite r)
       | None, None -> (0, Infinity)
+
+let leq_upper x up =
+  match up with
+  | Finite u -> x <= u
+  | Infinity -> true
+
 let interval_may_overlap l r (ts_l, ts_u) =
-  match ts_u with
-  | Finite u -> ts_l <= r && l <= u
-  | Infinity -> ts_l <= r
+  leq_upper ts_l r && leq_upper l ts_u
 
 let past_candidate_tps prefix tp l r =
   Set.of_list (module Int)
@@ -131,8 +135,9 @@ let do_exists_node x tc part =
                        | Some (V vp) -> raise (Invalid_argument "found V proof in S partition")
                        | None -> raise (Invalid_argument "found None in Some partition")))))
   else
+    if Part.for_all part Proof.opt_isV then
     [Some (V (Proof.VExists (x, Part.map_dedup Proof.v_equal part Proof.opt_unV)))]
-
+    else []
 let do_forall_leaf x tc = function
   | Some p -> (match p with
                | Proof.S sp -> Some (Proof.S (SForall (x, Part.trivial sp)))
@@ -164,7 +169,7 @@ let do_prev i (p_opt: Proof.t option) (prev_l,prev_u) (cur_l,cur_u) (pol: Polari
     let l = match Interval.right i with 
     | None -> 0 
     | Some b -> cur_l - b in
-    let r = cur_u - Interval.left i in
+    let r = Finite (cur_u - Interval.left i) in
     let is_candidate = interval_may_overlap l r (prev_l, prev_u) in
   Proof.Size.minp_list
     (match p_opt, pol with
@@ -172,7 +177,10 @@ let do_prev i (p_opt: Proof.t option) (prev_l,prev_u) (cur_l,cur_u) (pol: Polari
                              [Proof.S (SPrev sp)]
                            else []
      | Some (V vp), VIO -> (if not is_candidate then
-                           (if prev_l > r then
+                           (
+                            match r with
+                            | Infinity -> [V (VPrev vp)]
+                            | Finite u -> if prev_l > u then
                              [Proof.V (VPrevOutL ((Proof.v_at vp)+1))]
                            else
                                 [Proof.V (VPrevOutR ((Proof.v_at vp)+1))])
@@ -185,8 +193,8 @@ let do_next i (p_opt: Proof.t option) (cur_l,cur_u) (next_l,next_u)  (pol: Polar
   | Finite cur_u ->
     let l = cur_l + Interval.left i in
     let r = match Interval.right i with
-    | None -> failwith "unbounded Next"
-    | Some b -> cur_u + b in
+    | None -> Infinity
+    | Some b -> Finite (cur_u + b) in
   let is_candidate = interval_may_overlap l r (next_l,next_u) in
   Proof.Size.minp_list
     (match p_opt, pol with
@@ -194,7 +202,10 @@ let do_next i (p_opt: Proof.t option) (cur_l,cur_u) (next_l,next_u)  (pol: Polar
                              [S (SNext sp)]
                            else []
      | Some (V vp), VIO -> (if not is_candidate then
-                           (if next_l > r then
+                           (
+                            match r with
+                            | Infinity -> [V (VNext vp)]
+                            | Finite u -> if next_l > u then
                              [V (VNextOutL ((Proof.v_at vp)-1))]
                            else
                                 [V (VNextOutR ((Proof.v_at vp)-1))])
@@ -443,7 +454,7 @@ let explain prefix v pol tp f =
                             let l = match Interval.right i with
                               | None -> 0
                               | Some b -> ts_l - b in
-                            let r = ts_u - Interval.left i in
+                            let r = Finite (ts_u - Interval.left i) in
                             let candidates = past_candidate_tps prefix tp l r in
                             match pol with
                             | SAT -> let expl = once_sat tp candidates vars f tp (Pdt.Leaf None) vars_map in
@@ -460,8 +471,8 @@ let explain prefix v pol tp f =
                             | Finite ts_u ->
                               let l = ts_l + Interval.left i in
                               let r = match Interval.right i with
-                              | None -> failwith "unbounded eventually"
-                              | Some b -> ts_u + b in
+                              | None -> Infinity
+                              | Some b -> Finite (ts_u + b) in
                               let candidates = future_candidate_tps prefix tp l r in
                             match pol with
                             | SAT -> let expl = eventually_sat tp candidates vars f tp (Pdt.Leaf None) vars_map in
@@ -479,16 +490,20 @@ let explain prefix v pol tp f =
                             let l = match Interval.right i with
                               | None -> 0
                               | Some b -> ts_l - b in
-                            let r = ts_u - Interval.left i in
+                            let r = Finite (ts_u - Interval.left i) in
                             let candidates = past_candidate_tps prefix tp l r in
                               match pol with
                               | SAT -> 
-                                      if r < 0 then Pdt.Leaf (Some (Proof.S (SHistoricallyOut tp)))
+                                      (match r with
+                                      | Infinity -> let expl = Pdt.uneither (historically_sat tp candidates vars f tp
+                                                                  (Pdt.Leaf (Either.second Fdeque.empty)) vars_map)
+                              in expl
+                                      | Finite u -> if u < 0 then Pdt.Leaf (Some (Proof.S (SHistoricallyOut tp)))
                                       else
                                       let expl = Pdt.uneither (historically_sat tp candidates vars f tp
                                                                   (Pdt.Leaf (Either.second Fdeque.empty)) vars_map) in
                                        (* traceln "HISTORICALLY_SAT expl = %s" (Expl.to_string expl); *)
-                                       expl
+                                       expl)
                               | VIO -> let expl = historically_vio tp candidates vars f tp (Pdt.Leaf None) vars_map in
                                        (* traceln "HISTORICALLY_VIO expl = %s" (Expl.to_string expl); *)
                                        expl)
@@ -498,8 +513,8 @@ let explain prefix v pol tp f =
                             | Finite ts_u ->
                               let l = ts_l + Interval.left i in
                               let r = match Interval.right i with
-                              | None -> failwith "unbounded eventually"
-                              | Some b -> ts_u + b in
+                              | None -> Infinity
+                              | Some b -> Finite (ts_u + b) in
                               let candidates = future_candidate_tps prefix tp l r in
                         match pol with
                         | SAT -> let expl = Pdt.uneither (always_sat tp candidates vars f tp
@@ -516,7 +531,7 @@ let explain prefix v pol tp f =
                             let l = match Interval.right i with
                               | None -> 0
                               | Some b -> ts_l - b in
-                            let r = ts_u - Interval.left i in
+                            let r = Finite (ts_u - Interval.left i) in
                             let candidates = past_candidate_tps prefix tp l r in
                             match pol with
                             | SAT -> let expl = Pdt.uneither
@@ -536,8 +551,8 @@ let explain prefix v pol tp f =
                             | Finite ts_u ->
                               let l = ts_l + Interval.left i in
                               let r = match Interval.right i with
-                              | None -> failwith "unbounded eventually"
-                              | Some b -> ts_u + b in
+                              | None -> Infinity
+                              | Some b -> Finite (ts_u + b) in
                               let candidates = future_candidate_tps prefix tp l r in
                             match pol with
                             | SAT -> let expl = Pdt.uneither
@@ -569,7 +584,7 @@ let explain prefix v pol tp f =
               (match sp_opt with
                | None -> None
                | Some (Proof.S sp) -> Some (Proof.S (SOnce (cur_tp, sp)))
-               | _ -> raise (Invalid_argument "found V proof in S case"))
+               | Some  (Proof.V _) -> None)
           | Some p -> Some p)
         expl mexpl
     in
@@ -594,7 +609,7 @@ let explain prefix v pol tp f =
              (match vp_opt with
               | None -> Either.first None
               | Some (Proof.V vp) -> Either.second (Fdeque.enqueue_front vps vp)
-              | _ -> raise (Invalid_argument "found S proof in V case")))
+              | Some (Proof.S _) -> Either.first None))
         expl mexpl
     in
     if stop_either vars vars_map mexpl VIO then mexpl
@@ -615,7 +630,7 @@ let explain prefix v pol tp f =
                           | None -> (match sp_opt with
                                      | None -> None
                                      | Some (Proof.S sp) -> Some (Proof.S (SEventually (cur_tp, sp)))
-                                     |_ -> raise (Invalid_argument "found V proof in S case"))
+                                     | Some (Proof.V _) -> None )
                           | Some p -> Some p) expl mexpl in
           if should_stop vars vars_map mexpl SAT then mexpl
           else eventually_sat cur_tp candidates vars f (tp+1) mexpl vars_map)
@@ -636,7 +651,7 @@ let explain prefix v pol tp f =
                              (match vp_opt with
                               | None -> Either.first None
                               | Some (Proof.V vp) -> Either.second (Fdeque.enqueue_back vps vp)
-                              | _ -> raise (Invalid_argument "found S proof in V case")))
+                              | Some (Proof.S _) -> Either.first None ))
                         expl mexpl in
           if stop_either vars vars_map mexpl VIO then mexpl
           else eventually_vio cur_tp candidates vars f (tp+1) mexpl vars_map)
@@ -660,7 +675,7 @@ let explain prefix v pol tp f =
                                    (match sp_opt with
                                     | None -> Either.first None
                                     | Some (Proof.S sp) -> Either.second (Fdeque.enqueue_front sps sp)
-                                    | _ -> raise (Invalid_argument "found V proof in S case")))
+                                    | Some (Proof.V _) -> Either.first None ))
                               expl mexpl in
                 if stop_either vars vars_map mexpl SAT then mexpl
              else historically_sat cur_tp candidates vars f (tp-1) mexpl vars_map
@@ -678,7 +693,7 @@ let explain prefix v pol tp f =
                              | None -> (match sp_opt with
                                         | None -> None
                                         | Some (Proof.V vp) -> Some (Proof.V (VHistorically (cur_tp, vp)))
-                                        | _ -> raise (Invalid_argument "found S proof in V case"))
+                                        | Some (Proof.S _) -> None )
                              | Some p -> Some p) expl mexpl in
              if should_stop vars vars_map mexpl VIO then mexpl
           else historically_vio cur_tp candidates vars f (tp-1) mexpl vars_map
@@ -701,7 +716,7 @@ let explain prefix v pol tp f =
                              (match sp_opt with
                               | None -> Either.first None
                               | Some (Proof.S sp) -> Either.second (Fdeque.enqueue_back sps sp)
-                              | _ -> raise (Invalid_argument "found V proof in S case")))
+                              | Some (Proof.V _) -> Either.first None ))
                         expl mexpl in
           if stop_either vars vars_map mexpl SAT then mexpl
        else always_sat cur_tp candidates vars f (tp+1) mexpl vars_map
@@ -718,7 +733,7 @@ let explain prefix v pol tp f =
                           | None -> (match vp_opt with
                                      | None -> None
                                      | Some (Proof.V vp) -> Some (Proof.V (VAlways (cur_tp, vp)))
-                                     | _ -> raise (Invalid_argument "found S proof in V case"))
+                                     | Some (Proof.S _) ->None )
                           | Some p -> Some p) expl mexpl in
           if should_stop vars vars_map mexpl VIO then mexpl
        else always_vio cur_tp candidates vars f (tp+1) mexpl vars_map

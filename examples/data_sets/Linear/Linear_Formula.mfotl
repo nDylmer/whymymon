@@ -1,0 +1,1 @@
+((ONCE[0,7] A(a,b)) AND B(b,c)) AND (EVENTUALLY [0,7] C(c,d))
