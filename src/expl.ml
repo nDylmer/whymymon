@@ -1239,7 +1239,7 @@ module Pdt = struct
                  | Proof.S _, Polarity.SAT
                    | V _, VIO -> Leaf (Some l)
                  | _ -> Leaf None)
-    | Node (x, part) -> Node (x, Part.map part (fun expl -> somes expl))
+    | Node (x, part) -> Node (x, Part.map part (fun expl -> somes_pol pol expl))
 
   let rec uneither = function
     | Leaf (Either.First l) -> Leaf l
