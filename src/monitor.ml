@@ -584,7 +584,7 @@ let explain prefix v pol tp f =
               (match sp_opt with
                | None -> None
                | Some (Proof.S sp) -> Some (Proof.S (SOnce (cur_tp, sp)))
-               | Some  (Proof.V _) -> None)
+               | _ -> raise (Invalid_argument "found V proof in S case"))
           | Some p -> Some p)
         expl mexpl
     in
@@ -609,7 +609,7 @@ let explain prefix v pol tp f =
              (match vp_opt with
               | None -> Either.first None
               | Some (Proof.V vp) -> Either.second (Fdeque.enqueue_front vps vp)
-              | Some (Proof.S _) -> Either.first None))
+              | _ -> raise (Invalid_argument "found S proof in V case")))
         expl mexpl
     in
     if stop_either vars vars_map mexpl VIO then mexpl
@@ -630,7 +630,7 @@ let explain prefix v pol tp f =
                           | None -> (match sp_opt with
                                      | None -> None
                                      | Some (Proof.S sp) -> Some (Proof.S (SEventually (cur_tp, sp)))
-                                     | Some (Proof.V _) -> None )
+                                     | _ -> raise (Invalid_argument "found V proof in S case"))
                           | Some p -> Some p) expl mexpl in
           if should_stop vars vars_map mexpl SAT then mexpl
           else eventually_sat cur_tp candidates vars f (tp+1) mexpl vars_map)
@@ -651,7 +651,7 @@ let explain prefix v pol tp f =
                              (match vp_opt with
                               | None -> Either.first None
                               | Some (Proof.V vp) -> Either.second (Fdeque.enqueue_back vps vp)
-                              | Some (Proof.S _) -> Either.first None ))
+                              | _ -> raise (Invalid_argument "found S proof in V case")))
                         expl mexpl in
           if stop_either vars vars_map mexpl VIO then mexpl
           else eventually_vio cur_tp candidates vars f (tp+1) mexpl vars_map)
@@ -675,7 +675,7 @@ let explain prefix v pol tp f =
                                    (match sp_opt with
                                     | None -> Either.first None
                                     | Some (Proof.S sp) -> Either.second (Fdeque.enqueue_front sps sp)
-                                    | Some (Proof.V _) -> Either.first None ))
+                                    | _ -> raise (Invalid_argument "found V proof in S case")))
                               expl mexpl in
                 if stop_either vars vars_map mexpl SAT then mexpl
              else historically_sat cur_tp candidates vars f (tp-1) mexpl vars_map
@@ -693,7 +693,7 @@ let explain prefix v pol tp f =
                              | None -> (match sp_opt with
                                         | None -> None
                                         | Some (Proof.V vp) -> Some (Proof.V (VHistorically (cur_tp, vp)))
-                                        | Some (Proof.S _) -> None )
+                                        | _ -> raise (Invalid_argument "found S proof in V case"))
                              | Some p -> Some p) expl mexpl in
              if should_stop vars vars_map mexpl VIO then mexpl
           else historically_vio cur_tp candidates vars f (tp-1) mexpl vars_map
@@ -716,7 +716,7 @@ let explain prefix v pol tp f =
                              (match sp_opt with
                               | None -> Either.first None
                               | Some (Proof.S sp) -> Either.second (Fdeque.enqueue_back sps sp)
-                              | Some (Proof.V _) -> Either.first None ))
+                              | _ -> raise (Invalid_argument "found V proof in S case")))
                         expl mexpl in
           if stop_either vars vars_map mexpl SAT then mexpl
        else always_sat cur_tp candidates vars f (tp+1) mexpl vars_map
@@ -733,7 +733,7 @@ let explain prefix v pol tp f =
                           | None -> (match vp_opt with
                                      | None -> None
                                      | Some (Proof.V vp) -> Some (Proof.V (VAlways (cur_tp, vp)))
-                                     | Some (Proof.S _) ->None )
+                                     | _ -> raise (Invalid_argument "found S proof in V case"))
                           | Some p -> Some p) expl mexpl in
           if should_stop vars vars_map mexpl VIO then mexpl
        else always_vio cur_tp candidates vars f (tp+1) mexpl vars_map
@@ -950,10 +950,7 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
         | None ->
             (List.iter assignments ~f:(fun (tp,ts, v) ->
                 (* Stdio.printf "expl = %s\n" (Expl.opt_to_string (explain !prefix v pol tp f)); *)
-                let expl_opt = explain !prefix v pol tp f in
-                match Expl.Pdt.prune_nones expl_opt with
-                | None -> ()
-                | Some expl ->
+                let expl = Pdt.unsomes (explain !prefix v pol tp f )in
                 match mode with
                 | Argument.Mode.Unverified -> Out.Plain.print (Explanation (tp, (interval_ts_option !prefix tp),v, expl))
                 | Verified ->
