@@ -81,7 +81,9 @@ let write_line (mon: Argument.Monitor.t) (tp, ts_opt, db) =
               (match ts_opt with
               | Some ts -> "@" ^ Int.to_string ts ^ " " ^ Db.to_monpoly db
               | None -> failwith "MonPoly/VeriMon require timestamp")
-  | DejaVu -> failwith "missing"
+  | DejaVu -> (match ts_opt with
+              | Some ts -> Db.to_dejavu_timed ts db
+              | None -> Db.to_dejavu db)
 
   | TimelyMon -> 
     let tp = if !Etc.log_is_csv then tp else Timelylog.next_tp() in
@@ -94,7 +96,7 @@ let args (mon: Argument.Monitor.t) ~mon_path ?sig_path ~f_path =
                 f_path; "-nonewlastts"; "-nofilteremptytp"; "-nofilterrel"];
   | VeriMon -> [mon_path; "-sig"; Option.value_exn sig_path; "-formula";
                 f_path; "-nonewlastts"; "-nofilteremptytp"; "-nofilterrel"; "-verified"];
-  | DejaVu -> failwith "missing"
+  | DejaVu -> [mon_path; f_path];
   | TimelyMon -> 
     Timelylog.reset();
     [mon_path;"-s";Option.value_exn sig_path; f_path;]
