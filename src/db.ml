@@ -60,3 +60,12 @@ let to_json db =
 
 let to_monpoly db =
   Set.fold db ~init:"" ~f:(fun acc evt -> acc ^ Event.to_string evt ^ " ") ^ ";"
+
+let to_dejavu db =
+  Set.fold db ~init:"" ~f:(fun acc (name, args) ->
+    let args_str = String.concat ~sep:"," (List.map args ~f:Dom.to_string) in
+    acc ^ name ^ "," ^ args_str ^ "\n")
+let to_dejavu_timed ts db =
+  Set.fold db ~init:"" ~f:(fun acc (name, args) ->
+    let args_str = String.concat ~sep:"," (List.map args ~f:Dom.to_string) in
+    acc ^ name ^ "," ^ args_str ^ "," ^ Int.to_string ts ^ "\n")
