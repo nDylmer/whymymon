@@ -21,7 +21,7 @@ type out_item =
 (* TODO: Rewrite this using functors/first-class modules to distinguish monitors (or maybe not) *)
 let to_tpts_assignments (mon: Argument.Monitor.t) vars vars_tt line =
   match mon with
-  | DejaVu -> failwith "not yet"
+  | DejaVu
   | MonPoly
   | VeriMon -> let (tp, ts, sss) = Emonitor_parser.Monpoly.parse line in
                  if List.is_empty sss then [(tp, ts, Assignment.init ())]
@@ -65,13 +65,13 @@ let is_verdict (mon: Argument.Monitor.t) line =
   | MonPoly
   | VeriMon -> String.equal (String.prefix line 1) "@"
   | TimelyMon -> String.equal (String.prefix line 1) "("
-  | DejaVu -> failwith "missing"
+  | DejaVu -> String.equal (String.prefix line 4) "****"
 
 let parse_prog_tp (mon: Argument.Monitor.t) line =
   match mon with
   | MonPoly
     | VeriMon -> Int.of_string (List.last_exn (String.split line ~on:' '))
-  | DejaVu -> failwith "missing"
+  | DejaVu -> Int.of_string (List.last_exn (String.split line ~on:' '))
   | TimelyMon -> Int.min_value
 
 let write_line (mon: Argument.Monitor.t) (tp, ts_opt, db) =
@@ -82,6 +82,7 @@ let write_line (mon: Argument.Monitor.t) (tp, ts_opt, db) =
               | Some ts -> "@" ^ Int.to_string ts ^ " " ^ Db.to_monpoly db
               | None -> failwith "MonPoly/VeriMon require timestamp")
   | DejaVu -> failwith "missing"
+
   | TimelyMon -> 
     let tp = if !Etc.log_is_csv then tp else Timelylog.next_tp() in
     Timelylog.encode_db tp ts_opt db
