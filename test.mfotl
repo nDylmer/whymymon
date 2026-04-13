@@ -1,1 +1,1 @@
-(NOT A(a,b)) UNTIL[0,10] B(a,b)
+(ONCE A(a,b))

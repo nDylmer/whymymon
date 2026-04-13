@@ -20,7 +20,7 @@ module Quantifier = struct
   type t = Existential | Universal
 
 end
-(* approxmiation implementation*)
+
 type upper_bound = 
   | Finite of int
   | Infinity
@@ -923,9 +923,20 @@ let send_data json http_flow =
 let checker_interval_fix prefix =
   List.mapi (Array.to_list prefix) ~f:(fun i (ts_opt, db) ->
     match ts_opt with
-    | Some ts -> (ts,db)
-    | None -> (fst (timestamp_interval prefix i),db))
+    | Some ts -> [(ts, db)]
+    | None ->
+        let (ts_l, ts_u) = timestamp_interval prefix i in
+        match ts_u with
+        | Infinity -> [(ts_l, db)]
+        | Finite ts_u_val -> List.map (List.range ts_l (ts_u_val + 1)) ~f:(fun ts -> (ts, db)))
 
+
+let checker_interval_fix2 prefix =
+  List.mapi (Array.to_list prefix) ~f:(fun i (ts_opt, db) ->
+    match ts_opt with
+    | Some ts -> (ts, db)
+    | None -> (fst (timestamp_interval prefix i),db))
+    
 let interval_ts_option prefix tp =
   let interval = timestamp_interval prefix tp in
   match (snd interval) with
@@ -954,13 +965,25 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                 match mode with
                 | Argument.Mode.Unverified -> Out.Plain.print (Explanation (tp, (interval_ts_option !prefix tp),v, expl))
                 | Verified ->
-                    let (b, _, _) = 
-                    Checker_interface.check (checker_interval_fix !prefix) v f (Pdt.unleaf expl) in
-                    Out.Plain.print (ExplanationCheck (tp, (interval_ts_option !prefix tp),v, expl, b))
+                    let fix = checker_interval_fix !prefix in
+                    let base = List.map fix ~f:List.hd_exn in
+                    let bs = List.map (List.nth_exn fix tp) ~f:(fun (ts, db) ->
+                      let (b,_,_) = Checker_interface.check
+                        (List.mapi base ~f:(fun i (t,d) ->
+                          if i = tp then (ts,db) else if i > tp then (max t ts, d) else (t,d)))
+                        v f (Pdt.unleaf expl) in b) in
+                    Out.Plain.print (ExplanationCheck (tp, (interval_ts_option !prefix tp),v, expl, bs))
                 | LaTeX -> Out.Plain.print (ExplanationLatex (tp, (interval_ts_option !prefix tp), v,  expl, f))
                 | Debug ->
-                    let (b, c_e, c_trace) = Checker_interface.check (checker_interval_fix !prefix) v f (Pdt.unleaf expl) in
-                    Out.Plain.print (ExplanationCheckDebug (tp, (interval_ts_option !prefix tp), v, expl, b, c_e, c_trace))
+                    let fix = checker_interval_fix !prefix in
+                    let base = List.map fix ~f:List.hd_exn in
+                    let bs = List.map (List.nth_exn fix tp) ~f:(fun (ts, db) ->
+                      let (b,_,_) = Checker_interface.check
+                        (List.mapi base ~f:(fun i (t,d) ->
+                          if i = tp then (ts,db) else if i > tp then (max t ts, d) else (t,d)))
+                        v f (Pdt.unleaf expl) in b) in
+                      let (_,c_e,c_trace) = Checker_interface.check (checker_interval_fix2 !prefix) v f (Pdt.unleaf expl) in
+                    Out.Plain.print (ExplanationCheckDebug (tp, (interval_ts_option !prefix tp), v, expl, bs, c_e, c_trace))
                 | DebugVis -> ()))
         | Some http_flow -> ()
             (* (let expl = if List.is_empty assignments then
