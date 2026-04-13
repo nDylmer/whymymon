@@ -82,7 +82,6 @@ module WhyMyMon = struct
          if String.equal m "debug" then Etc.debug := true;
          process_args_rec args
       | ("-sig" :: sf :: args) ->
-         nec_arg_count := !nec_arg_count + 1;
          sig_path_ref := Filename_unix.realpath sf;
          Other_parser.Sig.parse_from_channel sf;
          process_args_rec args
@@ -105,7 +104,7 @@ module WhyMyMon = struct
       | ("-logstr" :: logs :: args) ->
          logstr_ref := logs;
          process_args_rec args
-      | [] -> if !nec_arg_count >= 2 then () else usage ()
+      | [] -> if !nec_arg_count >= 1 then () else usage ()
       | _ -> usage () in
     process_args_rec
 
@@ -116,13 +115,13 @@ module WhyMyMon = struct
       if String.equal !mon_path_ref "" then
         mon_path_ref := Filename_unix.realpath (Argument.Monitor.exec_path !mon_ref);
       match !mon_ref with
+      | DejaVu
       | MonPoly
       | TimelyMon
         | VeriMon -> let _ = Monitor.exec !interf_ref !mon_ref ~mon_path:!mon_path_ref ~sig_path:!sig_path_ref
                                ~formula_file:!formula_file_ref !stream_ref (Option.value_exn !formula_ref)
                                !pref_ref !mode_ref extra_args in ()
 
-      | DejaVu -> failwith "not yet"
       | _ -> failwith "not yet"
     with End_of_file -> exit 0
 

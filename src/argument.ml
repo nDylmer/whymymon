@@ -49,7 +49,7 @@ module Monitor = struct
   let exec_path = function
     | MonPoly
       | VeriMon -> "_build/install/default/bin/monpoly"
-    | DejaVu -> failwith "not yet"
+    | DejaVu -> "third-party/dejavu-online/out/dejavu-online"
     | TimelyMon -> "third-party/timelymon/target/release/timelymon"
 
   let extra_args (pref: Preference.t) = function
