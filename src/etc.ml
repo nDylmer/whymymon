@@ -13,6 +13,7 @@ module Fdeque = Core.Fdeque
 
 let debug = ref false
 let log_is_csv = ref false
+let is_dejavu_timed = ref false
 
 (* Misc *)
 type timepoint = int

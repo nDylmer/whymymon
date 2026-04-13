@@ -10,6 +10,7 @@
 (*******************************************************************)
 
 open Base
+open Etc
 
 module Preference = struct
 
@@ -62,7 +63,13 @@ module Monitor = struct
                     | Violation -> failwith "not yet")
               
       
-    | DejaVu -> failwith "not yet"
+    | DejaVu -> (match pref with 
+                | Satisfaction -> failwith "Dejavu only works in vio mode"
+                | Violation -> 
+                              (if !Etc.is_dejavu_timed then
+                              ["20";"timed"]
+                              else []
+                              ))
 
 end
 

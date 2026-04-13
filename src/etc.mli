@@ -13,6 +13,7 @@ module Fdeque = Core.Fdeque
 
 val debug: bool ref
 val log_is_csv: bool ref
+val is_dejavu_timed : bool ref
 
 (* Misc *)
 type timepoint = int
