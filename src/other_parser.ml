@@ -304,3 +304,17 @@ end
 
 
 
+(*module CSV_dejavu = struct
+
+  type cursor = Processed of Parsebuf.t
+              | Skipped   of Parsebuf.t * string
+              | Watermark of int
+              | Finished
+
+  let parse_aux (pb: Parsebuf.t) =
+    let rec parse_init () =
+      match pb.token with
+      | STR s -> Parsebuf.next pb; parse_db ()
+      | EOF -> Finished
+      | t -> Skipped (pb, "expected a string" ^ string_of_token t)
+    and parse_ts () = *)

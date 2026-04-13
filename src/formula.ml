@@ -481,9 +481,33 @@ let rec to_timelymon = function
   | Until (i, f, g) -> Printf.sprintf "(%a UNTIL%a %a)" (fun x -> to_timelymon) f
                          (fun x -> Interval.to_string) i (fun x -> to_timelymon) g
 
+let dejavu_interval = function
+  | Interval.U (UI 0) -> ""
+  | Interval.U (UI l) -> Printf.sprintf "[>%d]" (l - 1)
+  | Interval.B (BI (0, r)) -> Printf.sprintf "[<=%d]" r
+  | Interval.B (BI (l, _)) -> failwith (Printf.sprintf "DejaVu: no equivalent for interval with lower bound %d > 0" l)
+let rec to_dejavu = function
+  | TT -> "true"
+  | FF -> "false"
+  | EqConst (x, c) -> Printf.sprintf "%s = %s" x (Dom.to_string c)
+  | Predicate (r, trms) -> Printf.sprintf "%s(%s)" r (Term.list_to_string trms)
+  | Neg f -> Printf.sprintf "!%s" (to_dejavu f)
+  | And (f, g) -> Printf.sprintf "(%s & %s)" (to_dejavu f) (to_dejavu g)
+  | Or (f, g) -> Printf.sprintf "(%s | %s)" (to_dejavu f) (to_dejavu g)
+  | Imp (f, g) -> Printf.sprintf "(%s -> %s)" (to_dejavu f) (to_dejavu g)
+  | Iff (_, _) -> failwith "DejaVu: no biconditional"
+  | Exists (x, _, f) -> Printf.sprintf "Exists %s . %s" x (to_dejavu f)
+  | Forall (x, _, f) -> Printf.sprintf "Forall %s . %s" x (to_dejavu f)
+  | Prev (_, f) -> Printf.sprintf "@ %s" (to_dejavu f)
+  | Once (i, f) -> Printf.sprintf "P%s %s" (dejavu_interval i) (to_dejavu f)
+  | Historically (i, f) -> Printf.sprintf "H%s %s" (dejavu_interval i) (to_dejavu f)
+  | Since (i, f, g) -> Printf.sprintf "(%s S%s %s)" (to_dejavu f) (dejavu_interval i) (to_dejavu g)
+  | Next _ | Eventually _ | Always _ | Until _ -> failwith "DejaVu: no future operators"
+
+
 let convert (mon: Argument.Monitor.t) f =
   match mon with
-  | DejaVu -> failwith "missing"
+  | DejaVu -> to_dejavu f
   | MonPoly -> to_monpoly f
   | VeriMon -> to_monpoly f
   | TimelyMon -> to_timelymon f

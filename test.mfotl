@@ -1,1 +1,1 @@
-(ONCE A(a,b))
+FORALL f. (close(f) -> EXISTS m. PREV ((NOT close(f)) SINCE open(f,m)))
