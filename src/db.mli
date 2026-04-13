@@ -33,3 +33,6 @@ val to_string: t -> string
 val to_json: t -> string
 
 val to_monpoly: t -> string
+
+val to_dejavu : t -> string
+val to_dejavu_timed : timestamp -> t -> string
