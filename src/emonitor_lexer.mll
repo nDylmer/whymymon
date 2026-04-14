@@ -27,7 +27,7 @@ let letter = uc | lc
 let digit = ['0'-'9']
 
 let digits = ['0'-'9']+
-let string = (letter | digit | '_' | '[' | ']' | '/' | '-' | '.' | '!')+
+let string = (letter | digit | '_' | '[' | ']' | '/' | '-' | '.' | '!' | '*')+
 let quoted_string = ([^ '"' '\\'] | '\\' _)*
 
 (* For TimelyMon*)

@@ -50,6 +50,7 @@ module Parsebuf = struct
                          ; db = Db.create [] }
 
   let add_event evt pb = pb.db <- Db.add_event pb.db evt
+  let get_tp pb = pb.tp
 
 end
 
@@ -212,6 +213,53 @@ module CSV = struct
       
 end
 
+
+module CSV_dejavu = struct
+
+  type cursor = Processed of Parsebuf.t
+              | Skipped   of Parsebuf.t * string
+              | Watermark of int
+              | Finished
+
+
+  let parse_event line =
+    match List.map ~f:String.strip (String.split line ~on:',') with
+    | pred :: args ->
+        if !Etc.is_dejavu_timed then
+        let rev = List.rev args in
+        (match rev with
+         | ts_str :: rest_rev ->
+             let evt = (pred, List.map (List.rev rest_rev) ~f:(fun s -> Dom.Str s)) in
+             Some (evt, Int.of_string_opt ts_str)
+         | [] -> None)
+      else
+        Some ((pred, List.map args ~f:(fun s -> Dom.Str s)), None)
+  | _ -> None
+
+
+  let parse_from_channel inc pb_opt =
+     let prev_tp = match pb_opt with
+    | None -> -1
+    | Some pb -> Parsebuf.get_tp pb
+  in
+  let pb = Parsebuf.init (Lexing.from_string "") in
+  pb.tp <- prev_tp ;
+    match In_channel.input_line inc with
+    | None -> Finished
+    | Some line ->
+        let line = String.strip line in
+        if String.is_empty line then Skipped (pb, "empty line")
+        else
+          match parse_event line with
+          | Some (evt, ts_opt) ->
+              pb.tp <- pb.tp + 1;
+              pb.ts <- ts_opt;
+              Parsebuf.add_event evt pb;
+              Processed pb
+          | None -> Skipped (pb, "bad csv event")
+end
+
+
 module Trace = struct
 
   type cursor = Processed of Parsebuf.t
@@ -275,7 +323,15 @@ module Trace = struct
       | t -> Skipped (pb, "expected ',' or ')' but found " ^ string_of_token t) in
     parse_init ()
 
-  let parse_from_channel inc pb_opt =
+  let parse_from_channel inc pb_opt mon  =
+    match mon with 
+    | Argument.Monitor.DejaVu ->
+    (match CSV_dejavu.parse_from_channel inc pb_opt with
+      | CSV_dejavu.Processed pb -> Processed pb
+      | CSV_dejavu.Skipped (pb, msg) -> Skipped (pb, msg)
+      | CSV_dejavu.Watermark w -> Watermark w
+      | CSV_dejavu.Finished -> Finished)
+    | MonPoly | TimelyMon | VeriMon ->
     if !Etc.log_is_csv then
       match CSV.parse_from_channel inc pb_opt with
       | CSV.Processed pb -> Processed pb
@@ -301,20 +357,3 @@ module Trace = struct
 
 end
 
-
-
-
-(*module CSV_dejavu = struct
-
-  type cursor = Processed of Parsebuf.t
-              | Skipped   of Parsebuf.t * string
-              | Watermark of int
-              | Finished
-
-  let parse_aux (pb: Parsebuf.t) =
-    let rec parse_init () =
-      match pb.token with
-      | STR s -> Parsebuf.next pb; parse_db ()
-      | EOF -> Finished
-      | t -> Skipped (pb, "expected a string" ^ string_of_token t)
-    and parse_ts () = *)

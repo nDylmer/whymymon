@@ -163,13 +163,15 @@ let maps_to_string maps =
                                                Printf.sprintf "%s -> %s\n" k (Dom.to_string v)))))
 
 let do_prev i (p_opt: Proof.t option) (prev_l,prev_u) (cur_l,cur_u) (pol: Polarity.t) =
-  match cur_u with
-  | Infinity -> Proof.Size.minp_list []
-  | Finite cur_u ->
-    let l = match Interval.right i with 
-    | None -> 0 
-    | Some b -> cur_l - b in
-    let r = Finite (cur_u - Interval.left i) in
+  let l = match Interval.right i with
+    | None -> 0
+    | Some b -> 
+    (match cur_u with 
+    | Infinity -> 0 
+    | Finite cu -> cur_l - b) in
+  let r = match cur_u with
+    | Infinity -> Infinity
+    | Finite cu -> Finite (cu - Interval.left i) in
     let is_candidate = interval_may_overlap l r (prev_l, prev_u) in
   Proof.Size.minp_list
     (match p_opt, pol with
@@ -312,8 +314,8 @@ let ts_opt prefix tp =
   | None -> Pdt.Leaf None 
 
 let explain prefix v pol tp f =
-  (* traceln "assignment: %s" (Assignment.to_string v); *)
-  (* traceln "tp = %d" tp; *)
+  (* traceln "assignment: %s" (Assignment.to_string v); 
+  traceln "tp = %d" tp; *)
   let rec eval vars vars_map tp (pol: Polarity.t) (f: Formula.t) = match f with
     | TT ->
        (match pol with
@@ -352,11 +354,11 @@ let explain prefix v pol tp f =
        (* traceln "maps = %s" (maps_to_string maps'); *)
        let fvs = Set.of_list (module String) (Pred.Term.fv_list trms_subst) in
        (* traceln "|fvs| = %d" (Set.length fvs); *)
-       (* traceln "|vars| = %d" (List.length vars); *)
+       (* traceln "|vars| = %d" (List.length vars);*) 
        let vars = List.filter vars ~f:(fun x -> Set.mem fvs x) in
-       (* if !Etc.debug then traceln "|vars| = %d" (List.length vars); *)
+       (* if !Etc.debug then  traceln "|vars| = %d" (List.length vars); *)
        let expl = Pdt.somes_pol pol (pdt_of tp r trms vars maps') in
-       (* traceln "PREDICATE %s; %s expl = %s" r (Polarity.to_string pol) (Expl.opt_to_string expl); *)
+        (* traceln "PREDICATE %s; %s expl = %s" r (Polarity.to_string pol) (Expl.opt_to_string expl); *)
        expl
     | Neg f ->
        let expl = eval vars vars_map tp (Polarity.invert pol) f in
@@ -524,14 +526,13 @@ let explain prefix v pol tp f =
                         | VIO -> let expl = always_vio tp candidates vars f tp (Pdt.Leaf None) vars_map in
                                  (* traceln "ALWAYS_VIO expl = %s" (Expl.to_string expl); *)
                                  expl)
-    | Since (i, f1, f2) -> let (ts_l, ts_u) = timestamp_interval prefix tp in
-                          (match ts_u with
-                          | Infinity -> failwith "infinite upper bound in HISTORICALLY"
-                          | Finite ts_u ->
-                            let l = match Interval.right i with
-                              | None -> 0
-                              | Some b -> ts_l - b in
-                            let r = Finite (ts_u - Interval.left i) in
+    | Since (i, f1, f2) -> (let (ts_l, ts_u) = timestamp_interval prefix tp in
+                          let l = (match Interval.right i with
+                            | None -> 0
+                            | Some b -> ts_l - b )in
+                          let r = (match ts_u with
+                            | Infinity -> Infinity
+                            | Finite ts_u -> Finite (ts_u - Interval.left i)) in
                             let candidates = past_candidate_tps prefix tp l r in
                             match pol with
                             | SAT -> let expl = Pdt.uneither
@@ -543,7 +544,7 @@ let explain prefix v pol tp f =
                                        Pdt.uneither
                                          (since_vio tp candidates vars f1 f2 tp
                                             (Pdt.Leaf (Either.second Fdeque.empty)) vars_map) in
-                                     (* traceln "SINCE_VIO (l=%d,r=%d) expl = %s" l r (Expl.opt_to_string expl); *)
+                                    (* traceln "SINCE_VIO  expl = %s"  (Expl.opt_to_string expl); *)
                                      expl)
     | Until (i, f1, f2) -> let (ts_l, ts_u) = timestamp_interval prefix tp in
                             (match ts_u with
@@ -805,8 +806,7 @@ let explain prefix v pol tp f =
                                     | _ -> (* traceln "p1 = %s\n" (Proof.to_string "" p1); *)
                                        (* traceln "p2 = %s\n" (Proof.to_string "" p2); *)
                                        Either.first None)) expl1 expl2 mexpl in
-                if stop_either vars vars_map mexpl VIO then mexpl
-                else since_vio cur_tp candidates vars f1 f2 (tp-1) mexpl vars_map)
+                since_vio cur_tp candidates vars f1 f2 (tp-1) mexpl vars_map)
              else
                (let expl1 = eval vars vars_map tp VIO f1 in
                 let mexpl = Pdt.apply2_reduce either_v_equal vars
@@ -819,8 +819,7 @@ let explain prefix v pol tp f =
                                     | Some (Proof.V vp1) ->
                                        Either.first (Some (Proof.V (Proof.VSince (cur_tp, vp1, Fdeque.empty))))))
                               expl1 mexpl in
-                if stop_either vars vars_map mexpl VIO then mexpl
-                else since_vio cur_tp candidates vars f1 f2 (tp-1) mexpl vars_map)
+                since_vio cur_tp candidates vars f1 f2 (tp-1) mexpl vars_map)
 
   (* Until *)
   and until_sat candidates vars f1 f2 tp mexpl vars_map =
@@ -960,8 +959,8 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
         match http_flow_opt with
         | None ->
             (List.iter assignments ~f:(fun (tp,ts, v) ->
-                (* Stdio.printf "expl = %s\n" (Expl.opt_to_string (explain !prefix v pol tp f)); *)
-                let expl = Pdt.unsomes (explain !prefix v pol tp f )in
+                (* Stdio.printf "expl = %s\n %d" (Expl.opt_to_string (explain !prefix v pol tp f))tp; *)
+                let expl = Pdt.unsomes (explain !prefix v pol tp f ) in
                 match mode with
                 | Argument.Mode.Unverified -> Out.Plain.print (Explanation (tp, (interval_ts_option !prefix tp),v, expl))
                 | Verified ->
@@ -1012,7 +1011,7 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
       else
         (match mon with
         (* Timelymon has no get_pos*)
-        | TimelyMon -> ();
+        | TimelyMon | DejaVu -> ();
         | _ ->
         (* get_pos output to keep track of progress *)
             (if !Etc.debug then traceln "Read current progress";
@@ -1025,12 +1024,13 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
 
 let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
   let rec step pb_opt =
-    match Other_parser.Trace.parse_from_channel stream pb_opt with
+    match Other_parser.Trace.parse_from_channel stream pb_opt mon with
     | Finished -> if !Etc.debug then traceln "Reached the end of event stream";
                   last_tp := Array.length !prefix - 1;
                   (match mon with
+                      | DejaVu
                       | TimelyMon -> Eio.Flow.close w_sink
-                      | MonPoly | VeriMon | DejaVu ->
+                      | MonPoly | VeriMon ->
                             Eio.Flow.copy_string "> get_pos <\n" w_sink);
                   Fiber.yield ()
     | Skipped (pb, msg) -> if !Etc.debug then traceln "Skipped time-point due to: %S" msg;
@@ -1043,8 +1043,8 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
                               if !Etc.debug then traceln "Processed event with missing time-stamp. Sending it to sink.");
                       Eio.Flow.copy_string (Emonitor.write_line mon (pb.tp, pb.ts, pb.db)) w_sink;
                       (match mon with
-                      | TimelyMon -> ()
-                      | MonPoly | VeriMon | DejaVu ->
+                      | TimelyMon | DejaVu -> ()
+                      | MonPoly | VeriMon  ->
                             Eio.Flow.copy_string "> get_pos <\n" w_sink);
                       if (!Etc.log_is_csv) then
                                               let prev = !prefix in

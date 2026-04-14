@@ -83,6 +83,7 @@ module WhyMyMon = struct
          process_args_rec args
       | ("-sig" :: sf :: args) ->
          sig_path_ref := Filename_unix.realpath sf;
+         
          Other_parser.Sig.parse_from_channel sf;
          process_args_rec args
       | ("-formula" :: f :: args) ->
@@ -100,6 +101,7 @@ module WhyMyMon = struct
       | ("-log" :: f :: args) ->
          stream_ref := In_channel.create f;
          Etc.log_is_csv := String.is_suffix f ~suffix:".csv";
+         Etc.is_dejavu_timed := String.is_suffix f ~suffix:".timed.csv";
          process_args_rec args
       | ("-logstr" :: logs :: args) ->
          logstr_ref := logs;

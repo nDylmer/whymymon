@@ -1,1 +1,1 @@
-FORALL f. (close(f) -> EXISTS m. PREV ((NOT close(f)) SINCE open(f,m)))
+FORALL f. (close(f) IMPLIES EXISTS m. PREV ((NOT close(f)) SINCE open(f,m)))

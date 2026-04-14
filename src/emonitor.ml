@@ -21,9 +21,18 @@ type out_item =
 (* TODO: Rewrite this using functors/first-class modules to distinguish monitors (or maybe not) *)
 let to_tpts_assignments (mon: Argument.Monitor.t) vars vars_tt line =
   match mon with
-  | DejaVu
   | MonPoly
   | VeriMon -> let (tp, ts, sss) = Emonitor_parser.Monpoly.parse line in
+                 if List.is_empty sss then [(tp, ts, Assignment.init ())]
+                 else
+
+                   List.map sss ~f:(fun ss ->
+                                List.fold2_exn (List.zip_exn vars vars_tt) ss ~init: (tp, ts,Assignment.init ())
+                                  ~f:(fun (tp,ts,v) (x, x_tt) s -> let d = Dom.string_to_t s x_tt in
+                                                          ( tp, ts , Assignment.add v x d)))
+  
+                                                          
+  | DejaVu -> let (tp, ts, sss) = Emonitor_parser.DejaVu.parse line in
                  if List.is_empty sss then [(tp, ts, Assignment.init ())]
                  else
 

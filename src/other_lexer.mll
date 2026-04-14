@@ -11,7 +11,7 @@
 
 open Etc
 
-type token = AT | LPA | RPA | COM | SEP | EOF | STR of string
+type token = AT | LPA | RPA | COM | SEP | EOF | STR of string 
 
 }
 

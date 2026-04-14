@@ -17,3 +17,6 @@ end
 module Timelymon : sig 
   val parse: string -> timepoint * timestamp option * string list list
 end
+module DejaVu : sig 
+  val parse: string -> timepoint * timestamp option * string list list
+end

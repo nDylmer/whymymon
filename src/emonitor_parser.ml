@@ -210,7 +210,8 @@ module DejaVu = struct
   let parse_aux (pb: Parsebuf.t) =
     let rec parse_init () =
       match pb.token with
-      | STR s -> Parsebuf.next pb; parse_tp ()
+      | STR s when String.equal s "number" -> parse_tp ();
+      | STR s -> Parsebuf.next pb; parse_init()
       | EOF -> Processed pb
       | t -> Error (pb, "expected '****' but found " ^ string_of_token t)
     and parse_tp () =

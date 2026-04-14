@@ -1,3 +1,4 @@
-A(a:int,b:int)
-B(a:int,b:int)
-C(a:int,b:int)
+open(f:string, m:string)
+close(f:string)
+write(f:string, d:string)
+read(f:string)
