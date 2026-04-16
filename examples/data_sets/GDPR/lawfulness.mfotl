@@ -1,1 +1,1 @@
-EXISTS data, dataid, dsid. use(data, dataid, dsid) AND ONCE (ds_consent(dsid, data) OR legal_grounds(dsid, data))
+EXISTS data. EXISTS dataid. EXISTS dsid. use(data, dataid, dsid) AND ONCE (ds_consent(dsid, data) OR legal_grounds(dsid, data))
