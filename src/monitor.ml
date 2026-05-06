@@ -21,38 +21,122 @@ module Quantifier = struct
 
 end
 
+type range =
+  | Lit of timepoint * timestamp
+  | Int of timepoint * timepoint * timestamp * timestamp
+  | IInt of timepoint * timestamp
+
+type obs_seq =
+  range list
+
+type prefix = {
+  mutable obs_seq : obs_seq;
+  dbs : (timepoint, Db.t) Hashtbl.t;
+}
 type upper_bound = 
   | Finite of int
   | Infinity
 
-let prefix_ts_opt prefix tp =
-  fst (Array.get prefix tp)
+let db_at prefix tp =
+  match Hashtbl.find prefix.dbs tp with
+  | Some db -> db
+  | None -> Db.create []
 
-let rec find_left_ts prefix tp =
-  if tp < 0 then None
-  else
-    match prefix_ts_opt prefix tp with
-    | Some ts -> Some ts
-    | None -> find_left_ts prefix (tp - 1)
+let add_db_union prefix tp db =
+  let old_db =
+    match Hashtbl.find prefix.dbs tp with
+    | Some old_db -> old_db
+    | None -> Db.create []
+  in
+  Hashtbl.set prefix.dbs ~key:tp ~data:(Set.union old_db db)
 
-let rec find_right_ts prefix tp =
-  if tp >= Array.length prefix then None
-  else
-    match prefix_ts_opt prefix tp with
-    | Some ts -> Some ts
-    | None -> find_right_ts prefix (tp + 1)
+
+let compare_tp tp range =
+  match range with
+  | Lit (a,_) -> 
+        if tp < a then -1 
+        else if tp > a then 1
+        else 0
+  | Int (a,b,_,_) ->
+        if tp < a then -1 
+        else if tp > b then 1
+        else 0
+  | IInt (a,_) ->
+        if tp < a then -1 
+        else 0
+
+let rec find_range_by_tp obs_seq tp =
+  match obs_seq with
+  | [] -> None
+  | range :: rest ->
+      match compare_tp tp range with
+      | 0 -> Some range
+      | -1 -> None
+      | 1 -> find_range_by_tp rest tp
+      | _ -> failwith "impossible compare result"
+
+
+let split_range_at range tp ts =
+  match range with
+  | Lit (a, _) ->
+        [range]
+
+  | Int (a, b, ts_l, ts_u) ->
+      let left =
+        if tp > a then [Int (a, tp - 1, ts_l, ts)] else []
+      in
+      let middle = [Lit (tp, ts)] in
+      let right =
+        if tp < b then [Int (tp + 1, b, ts, ts_u)] else []
+      in
+      left @ middle @ right
+
+  | IInt (a, ts_l) ->
+      let left =
+        if tp > a then [Int (a, tp - 1, ts_l, ts)] else []
+      in
+      let middle = [Lit (tp, ts)] in
+      let right = [IInt (tp + 1, ts)] in
+      left @ middle @ right
+
+let insert_ts prefix tp ts =
+  let rec aux acc ranges =
+    match ranges with
+    | [] ->
+        failwith "insert_ts: no range contains tp"
+
+    | range :: rest ->
+        match compare_tp tp range with
+        | 0 ->
+            let replacement = split_range_at range tp ts in
+            List.rev_append acc (replacement @ rest)
+        | -1 ->
+            failwith "insert_ts: tp before current range"
+        | 1 ->
+            aux (range :: acc) rest
+        | _ ->
+            failwith "impossible compare result"
+  in
+  prefix.obs_seq <- aux [] prefix.obs_seq
+
+
+let insert_prefix prefix tp ts_opt db =
+  add_db_union prefix tp db;
+  match ts_opt with
+  | Some ts -> insert_ts prefix tp ts
+  | None -> ()
+
+
+let timestamp_interval_of_range range =
+  match range with
+  | Lit (_, ts) -> (ts, Finite ts)
+  | Int (_, _, ts_lo, ts_hi) -> (ts_lo, Finite ts_hi)
+  | IInt (_, ts_lo) -> (ts_lo, Infinity)
 
 let timestamp_interval prefix tp =
-  match prefix_ts_opt prefix tp with
-  | Some ts -> (ts, Finite ts)
-  | None ->
-      let left = find_left_ts prefix (tp - 1) in
-      let right = find_right_ts prefix (tp + 1) in
-      match left, right with
-      | Some l, Some r -> (l, Finite r)
-      | Some l, None -> (l, Infinity)
-      | None, Some r -> (0, Finite r)
-      | None, None -> (0, Infinity)
+  match find_range_by_tp prefix.obs_seq tp with
+  | Some range -> timestamp_interval_of_range range
+  | None -> (0, Infinity)
 
 let leq_upper x up =
   match up with
@@ -63,14 +147,29 @@ let interval_may_overlap l r (ts_l, ts_u) =
   leq_upper ts_l r && leq_upper l ts_u
 
 let past_candidate_tps prefix tp l r =
-  Set.of_list (module Int)
-    (List.filter (List.range 0 (tp + 1)) ~f:(fun tp' ->
-       interval_may_overlap l r (timestamp_interval prefix tp')))
+  let keys = Hashtbl.keys prefix.dbs in
+  let candidates =
+    List.filter keys ~f:(fun tp' ->
+      tp' <= tp &&
+      interval_may_overlap l r (timestamp_interval prefix tp'))
+  in
+  Set.of_list (module Int) candidates
 
 let future_candidate_tps prefix tp l r =
-  Set.of_list (module Int)
-    (List.filter (List.range tp (Array.length prefix)) ~f:(fun tp' ->
-       interval_may_overlap l r (timestamp_interval prefix tp')))
+  let keys = Hashtbl.keys prefix.dbs in
+  let candidates =
+    List.filter keys ~f:(fun tp' ->
+      tp' >= tp &&
+      interval_may_overlap l r (timestamp_interval prefix tp'))
+  in
+  Set.of_list (module Int) candidates
+
+
+let prefix_max_tp prefix =
+  let keys = Hashtbl.keys prefix.dbs in
+  match List.max_elt keys ~compare:Int.compare with
+  | Some tp -> tp
+  | None -> -1
 
 
 let do_neg (p_opt: Proof.t option) (pol: Polarity.t) =
@@ -303,15 +402,7 @@ let rec stop vars vars_map expl (pol: Polarity.t) = match vars, expl, pol with
 let should_stop vars vars_map mexpl pol =
   try stop vars vars_map mexpl pol with
   | Match_failure _ -> false
-
-let ts_opt prefix tp =
-  match fst (Array.get prefix tp) with
-  | Some ts -> ts
-  | None -> None
- let ts_of_prefix prefix tp k =
-  match fst (Array.get prefix tp) with
-  | Some ts -> k ts
-  | None -> Pdt.Leaf None 
+ 
 
 let explain prefix v pol tp f =
   (* traceln "assignment: %s" (Assignment.to_string v); 
@@ -345,7 +436,7 @@ let explain prefix v pol tp f =
                                                            trm
                                                         | Some d -> Const d)
                                                      else trm) in
-       let db = Set.filter (snd (Array.get prefix tp)) ~f:(fun evt -> String.equal r (fst(evt))) in
+       let db = Set.filter (db_at prefix tp) ~f:(fun evt -> String.equal r (fst(evt))) in
        let maps = Set.fold db ~init:[] ~f:(fun acc evt -> match_terms trms_subst (snd evt)
                                                             (Map.empty (module String)) :: acc) in
        (* traceln "|maps| = %d" (List.length maps); *)
@@ -619,7 +710,7 @@ let explain prefix v pol tp f =
 
   (* Eventually *)
   and eventually_sat cur_tp candidates vars f tp mexpl vars_map =
-    if tp >= Array.length prefix then
+    if tp >= prefix_max_tp prefix then
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
     else if not (Set.mem candidates tp) then 
       eventually_sat cur_tp candidates vars f (tp+1) mexpl vars_map
@@ -636,7 +727,7 @@ let explain prefix v pol tp f =
           if should_stop vars vars_map mexpl SAT then mexpl
           else eventually_sat cur_tp candidates vars f (tp+1) mexpl vars_map)
   and eventually_vio cur_tp candidates vars f tp mexpl vars_map =
-      if tp >= Array.length prefix then
+      if tp >= prefix_max_tp prefix then
         Pdt.apply1_reduce either_v_equal vars
         (function First p -> First p
                 | Second vps -> Either.first (Some (Proof.V (Proof.VEventually (cur_tp, tp-1, vps))))) mexpl
@@ -701,7 +792,7 @@ let explain prefix v pol tp f =
 
   (* Always *)
   and always_sat cur_tp candidates vars f tp mexpl vars_map =
-    if tp >= Array.length prefix then
+    if tp >= prefix_max_tp prefix then
       Pdt.apply1_reduce either_s_equal vars
         (function First p -> First p
                 | Second sps -> Either.first (Some (Proof.S (Proof.SAlways (cur_tp, tp-1, sps))))) mexpl
@@ -722,7 +813,7 @@ let explain prefix v pol tp f =
           if stop_either vars vars_map mexpl SAT then mexpl
        else always_sat cur_tp candidates vars f (tp+1) mexpl vars_map
   and always_vio cur_tp candidates vars f tp mexpl vars_map =
-      if tp >= Array.length prefix then
+      if tp >= prefix_max_tp prefix then
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
       else if not (Set.mem candidates tp) then
         always_vio cur_tp candidates vars f (tp+1) mexpl vars_map
@@ -823,7 +914,7 @@ let explain prefix v pol tp f =
 
   (* Until *)
   and until_sat candidates vars f1 f2 tp mexpl vars_map =
-    if tp >= Array.length prefix then
+    if tp >= prefix_max_tp prefix then
       Pdt.apply1_reduce either_s_equal vars
         (function First p -> First p
                 | Second _ -> Either.first None) mexpl
@@ -865,7 +956,7 @@ let explain prefix v pol tp f =
           if stop_either vars vars_map mexpl SAT then mexpl
           else until_sat candidates vars f1 f2 (tp+1) mexpl vars_map)
   and until_vio cur_tp candidates vars f1 f2 tp mexpl vars_map =
-    if tp>= Array.length prefix then
+    if tp>= prefix_max_tp prefix then
       Pdt.apply1_reduce either_v_equal2 vars
         (function First p -> First p
                 | Second (_, vp2s) -> Either.first (Some (Proof.V (Proof.VUntilInf (cur_tp, tp-1, vp2s))))) mexpl
@@ -920,21 +1011,22 @@ let send_data json http_flow =
   Eio.Flow.copy_string (Printf.sprintf "data: %s\n\n" json) http_flow
 
 let checker_interval_fix prefix =
-  List.mapi (Array.to_list prefix) ~f:(fun i (ts_opt, db) ->
-    match ts_opt with
-    | Some ts -> [(ts, db)]
-    | None ->
-        let (ts_l, ts_u) = timestamp_interval prefix i in
-        match ts_u with
-        | Infinity -> [(ts_l, db)]
-        | Finite ts_u_val -> List.map (List.range ts_l (ts_u_val + 1)) ~f:(fun ts -> (ts, db)))
+  List.map (List.range 0 (prefix_max_tp prefix + 1)) ~f:(fun tp ->
+    let db = db_at prefix tp in
+    let ts_l, ts_u = timestamp_interval prefix tp in
+    match ts_u with
+    | Infinity ->
+        [(ts_l, db)]
+    | Finite ts_hi ->
+        List.map (List.range ts_l (ts_hi + 1)) ~f:(fun ts ->
+          (ts, db)))
 
 
 let checker_interval_fix2 prefix =
-  List.mapi (Array.to_list prefix) ~f:(fun i (ts_opt, db) ->
-    match ts_opt with
-    | Some ts -> (ts, db)
-    | None -> (fst (timestamp_interval prefix i),db))
+  List.map (List.range 0 (prefix_max_tp prefix + 1)) ~f:(fun tp ->
+    let ts = fst (timestamp_interval prefix tp) in
+    let db = db_at prefix tp in
+    (ts, db))
     
 let interval_ts_option prefix tp =
   let interval = timestamp_interval prefix tp in
@@ -964,19 +1056,38 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                 match mode with
                 | Argument.Mode.Unverified -> Out.Plain.print (Explanation (tp, (interval_ts_option !prefix tp),v, expl))
                 | Verified ->
-                    let fix = checker_interval_fix !prefix in
-                    let base = List.map fix ~f:List.hd_exn in
-                    let bs = List.map (List.nth_exn fix tp) ~f:(fun (ts, db) ->
-                      let (b,_,_) = Checker_interface.check
-                        (List.mapi base ~f:(fun i (t,d) ->
-                          if i = tp then (ts,db) else if i > tp then (max t ts, d) else (t,d)))
-                        v f (Pdt.unleaf expl) in b) in
+                    let db = db_at !prefix tp in
+                    let base = checker_interval_fix2 !prefix in
+                    let ts_l, ts_u = timestamp_interval !prefix tp in
+                    let pot_ts =
+                      match ts_u with
+                      | Finite ts_hi ->
+                          if Int.equal ts_l ts_hi then
+                            [ts_l]
+                          else
+                            List.range ts_l (ts_hi + 1)
+                      | Infinity ->
+                          [ts_l]
+                    in
+                    let bs = List.map pot_ts ~f:(fun ts ->
+                      let (b, _, _) =
+                      Checker_interface.check (List.mapi base ~f:(fun i (t,d) ->
+                          if i = tp then (ts,db) else if i > tp then (max t ts, d) else (t,d))) v f (Pdt.unleaf expl) in b) in
                     Out.Plain.print (ExplanationCheck (tp, (interval_ts_option !prefix tp),v, expl, bs))
                 | LaTeX -> Out.Plain.print (ExplanationLatex (tp, (interval_ts_option !prefix tp), v,  expl, f))
                 | Debug ->
-                    let fix = checker_interval_fix !prefix in
-                    let base = List.map fix ~f:List.hd_exn in
-                    let bs = List.map (List.nth_exn fix tp) ~f:(fun (ts, db) ->
+                    let db = db_at !prefix tp in
+                    let base = checker_interval_fix2 !prefix in
+                    let ts_l, ts_u = timestamp_interval !prefix tp in
+                    let pot_ts =
+                      match ts_u with
+                      | Finite ts_hi ->
+                          if Int.equal ts_l ts_hi then [ts_l]
+                          else List.range ts_l (ts_hi + 1)
+                      | Infinity ->
+                          [ts_l]
+                    in
+                    let bs = List.map (pot_ts) ~f:(fun (ts) ->
                       let (b,_,_) = Checker_interface.check
                         (List.mapi base ~f:(fun i (t,d) ->
                           if i = tp then (ts,db) else if i > tp then (max t ts, d) else (t,d)))
@@ -995,20 +1106,30 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
             (match mode with
               | Argument.Mode.Unverified ->
                 let (ertp, lrtp) = (Expl.ertp expl, Expl.lrtp expl) in
-                let slice = Array.sub !prefix ertp (lrtp - ertp + 1) in
-                let json_dbs = List.of_array (Array.mapi slice ~f:(fun i (ts, db) ->
-                                                  Out.Json.db ts (ertp + i) i db f)) in
-                let json_expl_rows = List.of_array
-                                        (Array.mapi slice ~f:(fun i (ts, _) ->
-                                            let ertp_i = ertp + i in
-                                            Out.Json.expl_row ts ertp
-                                              (if Int.equal tp ertp_i then Some (f, expl)
-                                                else None))) in
+                let tp_range = List.range ertp (lrtp + 1) in
+                let json_ts prefix tp =
+                Some (fst (timestamp_interval prefix tp)) in
+                let json_dbs =
+                List.mapi tp_range ~f:(fun i tp_i ->
+                  Out.Json.db
+                    (json_ts !prefix tp_i)
+                    tp_i
+                    i
+                    (db_at !prefix tp_i)
+                    f)
+              in
+                let json_expl_rows =
+                List.mapi tp_range ~f:(fun _i tp_i ->
+                  Out.Json.expl_row
+                    (json_ts !prefix tp_i)
+                    ertp
+                    (if Int.equal tp tp_i then Some (f, expl) else None))
+              in
                 send_data (Out.Json.aggregate tp json_dbs json_expl_rows) http_flow 
               | Verified -> ()
               | LaTeX
                 | Debug
-                | DebugVis -> ())))
+                | DebugVis -> ()))) 
       else
         (match mon with
         (* Timelymon has no get_pos*)
@@ -1027,7 +1148,7 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
   let rec step pb_opt =
     match Other_parser.Trace.parse_from_channel stream pb_opt mon with
     | Finished -> if !Etc.debug then traceln "Reached the end of event stream";
-                  last_tp := Array.length !prefix - 1;
+                  last_tp := prefix_max_tp !prefix;
                   (match mon with
                       | DejaVu
                       | TimelyMon -> Eio.Flow.close w_sink
@@ -1046,26 +1167,14 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
                       (match mon with
                       | TimelyMon | DejaVu -> ()
                       | MonPoly | VeriMon  ->
-                            Eio.Flow.copy_string "> get_pos <\n" w_sink);
-                      if (!Etc.log_is_csv) then
-                                              let prev = !prefix in
-                                              let n = Array.length prev in
-                                              if pb.tp >= n then
-                                                prefix := Array.init (pb.tp + 1) ~f:(fun i ->
-                                                  if i < n then prev.(i) else (None, Db.create []));
-                                              let (prev_ts_opt, prev_db) = (!prefix).(pb.tp) in
-                                              let ts_opt' =
-                                              match prev_ts_opt, pb.ts with
-                                              | Some ts0, Some ts when not (Int.equal ts0 ts) ->
-                                              if !Etc.debug then
-                                                traceln "Conflicting ts at tp=%d (keep %d, ignore %d)" pb.tp ts0 ts;
-                                              prev_ts_opt
-                                              | Some _, _ -> prev_ts_opt
-                                              | None, _ -> pb.ts
-                                              in
-                                              (!prefix).(pb.tp) <- (ts_opt', Set.union prev_db pb.db)
+                            Eio.Flow.copy_string "> get_pos <\n" w_sink);  
+                      let prefix_tp =
+                      if !Etc.log_is_csv then
+                        pb.tp
                       else
-                      prefix := Array.append !prefix [|(pb.ts, pb.db)|];
+                        !last_tp + 1 in
+                      last_tp := Int.max !last_tp prefix_tp;
+                      insert_prefix !prefix prefix_tp pb.ts pb.db;
                       Fiber.yield ();
                       step (Some(pb)) 
     | Watermark w ->
@@ -1123,7 +1232,12 @@ let exec interf mon ~mon_path ?sig_path ~formula_file stream f pref mode extra_a
       let r_source, r_sink = Eio.Process.pipe ~sw proc_mgr in
       let r_buf = Eio.Buf_read.of_flow r_source ~initial_size:100 ~max_size:1_000_000 in
       (* accumulated prefix ref *)
-      let prefix = ref [||]  in
+      let prefix =
+        ref {
+          obs_seq = [IInt (0, 0)];
+          dbs = Hashtbl.create (module Int);
+        } 
+      in
       (* last time-point in the stream *)
       let last_tp = ref (-1) in
       match interf with
