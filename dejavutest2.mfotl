@@ -1,0 +1,1 @@
+FORALL user. FORALL file. (access(user,file) IMPLIES ((NOT logout(user)) SINCE login(user)) AND ((NOT close(file)) SINCE open(file)))

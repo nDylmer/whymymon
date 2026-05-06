@@ -1,4 +1,4 @@
-categorize(int,int)
-log(int,int)
-edit(int,int)
-new(int,int)
+categorize(a:string,b:string)
+log(a:string,b:string)
+edit(a:string,b:string)
+new(a:string,b:string)

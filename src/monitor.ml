@@ -984,11 +984,12 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                       let (_,c_e,c_trace) = Checker_interface.check (checker_interval_fix2 !prefix) v f (Pdt.unleaf expl) in
                     Out.Plain.print (ExplanationCheckDebug (tp, (interval_ts_option !prefix tp), v, expl, bs, c_e, c_trace))
                 | DebugVis -> ()))
-        | Some http_flow -> ()
-            (* (let expl = if List.is_empty assignments then
+        | Some http_flow -> 
+            List.iter assignments ~f:(fun (tp,ts, v) ->
+            (let expl = if List.is_empty assignments then
                           Pdt.unsomes (explain !prefix (Map.empty (module String)) pol tp f)
                         else (Option.value_exn
-                                (List.fold assignments ~init:None ~f:(fun expl v ->
+                                (List.fold assignments ~init:None ~f:(fun expl (tp,ts,v) ->
                                     let pt = Expl.Pdt.unleaf (Pdt.unsomes (explain !prefix v pol tp f)) in
                                     Some(Expl.to_gui vars v pt expl)))) in
             (match mode with
@@ -1007,7 +1008,7 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
               | Verified -> ()
               | LaTeX
                 | Debug
-                | DebugVis -> ()))) *)
+                | DebugVis -> ())))
       else
         (match mon with
         (* Timelymon has no get_pos*)

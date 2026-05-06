@@ -1,0 +1,5 @@
+close(f:string)
+open(f:string,m:string)
+access(u:string,f:string)
+login(u:string)
+logout(u:string)
