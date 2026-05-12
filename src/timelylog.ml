@@ -26,8 +26,8 @@ let next_tp () =
 (* converts internal valye to text, timelymon input is text*)
 let atom_of_dom = function
   | Dom.Int i -> Int.to_string i
-  | Dom.Str s -> Printf.sprintf "'%s'" s
-  | Dom.Float f -> Printf.sprintf "'%s'" (Float.to_string f)
+  | Dom.Str s -> Printf.sprintf "%s" s
+  | Dom.Float f -> Printf.sprintf "%s" (Float.to_string f)
 
 (* converts one event into one timelymon line*)
 let event_line tp ts_opt ((pred, args) : Db.Event.t) =

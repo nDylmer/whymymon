@@ -140,7 +140,16 @@ module CSV = struct
   match String.lsplit2 (String.strip s) ~on:'=' with
   | Some (k, v) -> Some (String.strip k, String.strip v)
   | None -> None
-
+  
+  let unquote s =
+  let s = String.strip s in
+  if String.length s >= 2
+     && Char.equal s.[0] '"'
+     && Char.equal s.[String.length s - 1] '"'
+  then
+    String.sub s ~pos:1 ~len:(String.length s - 2)
+  else
+    s
 
   let parse_event line =
     let line = String.strip line in
@@ -167,7 +176,7 @@ module CSV = struct
               List.filter key_values ~f:(fun (k, _) ->
               not (String.equal k "tp" || String.equal k "ts"))
             in
-            List.map values ~f:snd
+            List.map values ~f:(fun (_, v) -> unquote v)
           in 
            (match tp_optional with
             | Some tp ->
