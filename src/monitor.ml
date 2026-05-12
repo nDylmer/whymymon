@@ -710,7 +710,7 @@ let explain prefix v pol tp f =
 
   (* Eventually *)
   and eventually_sat cur_tp candidates vars f tp mexpl vars_map =
-    if tp >= prefix_max_tp prefix then
+    if tp > prefix_max_tp prefix then
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
     else if not (Set.mem candidates tp) then 
       eventually_sat cur_tp candidates vars f (tp+1) mexpl vars_map
@@ -727,7 +727,7 @@ let explain prefix v pol tp f =
           if should_stop vars vars_map mexpl SAT then mexpl
           else eventually_sat cur_tp candidates vars f (tp+1) mexpl vars_map)
   and eventually_vio cur_tp candidates vars f tp mexpl vars_map =
-      if tp >= prefix_max_tp prefix then
+      if tp > prefix_max_tp prefix then
         Pdt.apply1_reduce either_v_equal vars
         (function First p -> First p
                 | Second vps -> Either.first (Some (Proof.V (Proof.VEventually (cur_tp, tp-1, vps))))) mexpl
@@ -792,7 +792,7 @@ let explain prefix v pol tp f =
 
   (* Always *)
   and always_sat cur_tp candidates vars f tp mexpl vars_map =
-    if tp >= prefix_max_tp prefix then
+    if tp > prefix_max_tp prefix then
       Pdt.apply1_reduce either_s_equal vars
         (function First p -> First p
                 | Second sps -> Either.first (Some (Proof.S (Proof.SAlways (cur_tp, tp-1, sps))))) mexpl
@@ -813,7 +813,7 @@ let explain prefix v pol tp f =
           if stop_either vars vars_map mexpl SAT then mexpl
        else always_sat cur_tp candidates vars f (tp+1) mexpl vars_map
   and always_vio cur_tp candidates vars f tp mexpl vars_map =
-      if tp >= prefix_max_tp prefix then
+      if tp > prefix_max_tp prefix then
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
       else if not (Set.mem candidates tp) then
         always_vio cur_tp candidates vars f (tp+1) mexpl vars_map
@@ -914,7 +914,7 @@ let explain prefix v pol tp f =
 
   (* Until *)
   and until_sat candidates vars f1 f2 tp mexpl vars_map =
-    if tp >= prefix_max_tp prefix then
+    if tp > prefix_max_tp prefix then
       Pdt.apply1_reduce either_s_equal vars
         (function First p -> First p
                 | Second _ -> Either.first None) mexpl
