@@ -1146,7 +1146,7 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
 
 let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
   let rec step pb_opt =
-    match Other_parser.Trace.parse_from_channel stream pb_opt mon with
+    match Other_parser.Event_stream.parse stream pb_opt mon with
     | Finished -> if !Etc.debug then traceln "Reached the end of event stream";
                   last_tp := prefix_max_tp !prefix;
                   (match mon with

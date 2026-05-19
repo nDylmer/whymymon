@@ -140,86 +140,104 @@ module CSV = struct
   match String.lsplit2 (String.strip s) ~on:'=' with
   | Some (k, v) -> Some (String.strip k, String.strip v)
   | None -> None
-  
-  let unquote s =
-  let s = String.strip s in
-  if String.length s >= 2
-     && Char.equal s.[0] '"'
-     && Char.equal s.[String.length s - 1] '"'
-  then
-    String.sub s ~pos:1 ~len:(String.length s - 2)
-  else
-    s
 
-  let parse_event line =
-    let line = String.strip line in
-    if String.is_empty line || String.is_substring line ~substring:"WATERMARK" then None
-    else
-        let parts = List.map (String.split line ~on:',') ~f:String.strip in
-        match parts with
-        | [] -> None
-        | pred :: rest -> 
-          let key_values = List.filter_map rest ~f:parse_key_value in
-          let tp_optional = 
-              match List.Assoc.find key_values ~equal:String.equal "tp" with
-            | None -> None
-            | Some s -> Int.of_string_opt s
-          in
-          let ts_optional = 
-              match List.Assoc.find key_values ~equal:String.equal "ts" with
-            | None -> None
-            | Some s -> Int.of_string_opt s
-          in
-          let pred = predicate pred in
-          let args =
-            let values =
-              List.filter key_values ~f:(fun (k, _) ->
-              not (String.equal k "tp" || String.equal k "ts"))
-            in
-            List.map values ~f:(fun (_, v) -> unquote v)
-          in 
-           (match tp_optional with
-            | Some tp ->
-              (try
-                let event = Db.Event.create pred args in
-                let db = Db.add_event (Db.create []) event in
-                Some (tp, ts_optional, db)
-              with _ -> None)
-            | _ -> None)
-        
-  
-  let parse_from_channel inc pb_opt =
-    let pb =
-      if Option.is_none pb_opt then 
-        Parsebuf.init (Lexing.from_string "")
-      else Parsebuf.clean  (Option.value_exn pb_opt)
-    in
-    match In_channel.input_line inc with 
-    | None -> Finished
-    | Some line ->
+
+  let parse_aux (pb: Parsebuf.t) =
+  let rec parse_init () =
+    match pb.token with
+    | STR raw ->
+        let pred_name = predicate raw in
+        (match Hashtbl.find Pred.Sig.table pred_name with
+         | Some props ->
+             pb.pred_sig <- Some (pred_name, props);
+             Parsebuf.next pb;
+             parse_tp();
+         | None ->
+             Skipped (pb, "predicate " ^ pred_name ^ " was not specified"))
+    | EOF -> Finished
+    | t -> Skipped (pb, "expected a predicate but found " ^ string_of_token t)
+  and parse_tp () =
+  match pb.token with
+  | STR s when String.equal s "tp" ->
+      Parsebuf.next pb;                                
+      (match pb.token with
+       | EQ ->
+           Parsebuf.next pb;                           
+           (match pb.token with
+            | STR num_s ->
+                (match Int.of_string_opt num_s with
+                 | Some tp ->
+                     pb.tp <- tp;
+                     Parsebuf.next pb;                
+                     parse_ts()              
+                 | None -> Skipped (pb, "expected an integer but found " ^ num_s))
+            | t -> Skipped (pb, "expected an integer but found " ^ string_of_token t))
+       | t -> Skipped (pb, "expected '=' but found " ^ string_of_token t))
+  | COM -> Parsebuf.next pb; parse_tp();
+  | t -> Skipped (pb, "expected 'tp' but found " ^ string_of_token t)
+
+  and parse_ts () =
+  match pb.token with
+  | STR s when String.equal s "ts" ->
+      Parsebuf.next pb;
+      (match pb.token with
+       | EQ ->
+           Parsebuf.next pb;
+           (match pb.token with
+            | STR num_s ->
+                (match Int.of_string_opt num_s with
+                 | Some ts ->
+                     pb.ts <- Some ts;
+                     Parsebuf.next pb;
+                     parse_args (Queue.create ())
+                 | None -> Skipped (pb, "expected an integer but found " ^ num_s))
+            | t -> Skipped (pb, "expected an integer but found " ^ string_of_token t))
+       | t -> Skipped (pb, "expected '=' but found " ^ string_of_token t))
+  | COM -> Parsebuf.next pb; parse_ts();
+  | t -> Skipped (pb, "expected 'ts' but found " ^ string_of_token t)
+
+  and parse_args q =
+  match pb.token with
+  | EOF  ->
+      let evt = Db.Event.create (Parsebuf.pred pb) (Queue.to_list q) in
+      Parsebuf.add_event evt pb;
+      Processed pb
+  | COM ->
+      Parsebuf.next pb;
+      (match pb.token with
+       | STR key ->
+           Parsebuf.next pb;
+           (match pb.token with
+            | EQ ->
+                Parsebuf.next pb;
+                (match pb.token with
+                 | STR v ->
+                     Parsebuf.next pb;
+                     Queue.enqueue q v;
+                     parse_args q                      
+                 | t -> Skipped (pb, "expected a value but found " ^ string_of_token t))
+            | t -> Skipped (pb, "expected '=' but found " ^ string_of_token t))
+       | t -> Skipped (pb, "expected a key but found " ^ string_of_token t))
+  | t -> Skipped (pb, "expected ',' or end of event but found " ^ string_of_token t)
+                 in 
+  parse_init()
+
+  let parse_from_channel inc _pb_opt =
+  match In_channel.input_line inc with
+  | None -> Finished
+  | Some line ->
       let line = String.strip line in
       if String.is_empty line then
-        Skipped (pb, "empty line")
+        Skipped (Parsebuf.init (Lexing.from_string ""), "empty line")
       else if String.is_substring line ~substring:"WATERMARK" then
-        let wm_opt =
-          let digits =
-            String.filter line ~f:(fun x -> Char.is_digit x)
-          in
-          Int.of_string_opt digits
-        in
-        (match wm_opt with
-        | Some w -> Watermark w
-        | None -> Skipped (pb, "bad watermark line"))
-      else 
-        match parse_event line with
-        | Some (tp,ts_opt,db) ->
-            pb.tp <- tp;    
-            pb.ts <- ts_opt;
-            pb.db <- db;
-            Processed pb
-        | None -> 
-          Skipped (pb, "bad csv event")
-      
+        (let digits = String.filter line ~f:Char.is_digit in
+         match Int.of_string_opt digits with
+         | Some w -> Watermark w
+         | None   -> Skipped (Parsebuf.init (Lexing.from_string ""),
+                              "bad watermark line"))
+      else
+        parse_aux (Parsebuf.init (Lexing.from_string line))
+
 end
 
 
@@ -230,42 +248,60 @@ module CSV_dejavu = struct
               | Watermark of int
               | Finished
 
+let parse_aux (pb: Parsebuf.t) =
+  let rec parse_init () =
+    match pb.token with
+    | STR s ->
+             Parsebuf.next pb;
+             parse_args s (Queue.create());
+    | EOF -> Finished
+    | t -> Skipped (pb, "expected a predicate but found " ^ string_of_token t)
+  and parse_args pred q =
+    match pb.token with
+    | EOF ->
+        let all = Queue.to_list q in
+        let (args, ts_opt) =
+          if !Etc.is_dejavu_timed then
+            (match List.rev all with
+             | last :: rest_rev -> (List.rev rest_rev, Int.of_string_opt last)
+             | [] -> ([], None))
+          else
+            (all, None)
+        in
+        let evt = (pred, List.map args ~f:(fun s -> Dom.Str s)) in
+        pb.tp <- pb.tp + 1;
+        pb.ts <- ts_opt;
+        Parsebuf.add_event evt pb;
+        Processed pb
+    | COM ->
+        Parsebuf.next pb;
+        (match pb.token with
+         | STR v ->
+             Parsebuf.next pb;
+             Queue.enqueue q v;
+             parse_args pred q
+         | t -> Skipped (pb, "expected an argument but found " ^ string_of_token t))
+    | t -> Skipped (pb, "expected ',' or end of event but found " ^ string_of_token t)
+  in
+  parse_init ()
 
-  let parse_event line =
-    match List.map ~f:String.strip (String.split line ~on:',') with
-    | pred :: args ->
-        if !Etc.is_dejavu_timed then
-        let rev = List.rev args in
-        (match rev with
-         | ts_str :: rest_rev ->
-             let evt = (pred, List.map (List.rev rest_rev) ~f:(fun s -> Dom.Str s)) in
-             Some (evt, Int.of_string_opt ts_str)
-         | [] -> None)
-      else
-        Some ((pred, List.map args ~f:(fun s -> Dom.Str s)), None)
-  | _ -> None
 
 
   let parse_from_channel inc pb_opt =
-     let prev_tp = match pb_opt with
-    | None -> -1
-    | Some pb -> Parsebuf.get_tp pb
+  let prev_tp = match pb_opt with
+    | None -> -1                      
+    | Some pb -> Parsebuf.get_tp pb    
   in
-  let pb = Parsebuf.init (Lexing.from_string "") in
-  pb.tp <- prev_tp ;
-    match In_channel.input_line inc with
-    | None -> Finished
-    | Some line ->
-        let line = String.strip line in
-        if String.is_empty line then Skipped (pb, "empty line")
-        else
-          match parse_event line with
-          | Some (evt, ts_opt) ->
-              pb.tp <- pb.tp + 1;
-              pb.ts <- ts_opt;
-              Parsebuf.add_event evt pb;
-              Processed pb
-          | None -> Skipped (pb, "bad csv event")
+  match In_channel.input_line inc with
+  | None -> Finished
+  | Some line ->
+      let line = String.strip line in
+      let pb = Parsebuf.init (Lexing.from_string line) in
+      pb.tp <- prev_tp;               
+      if String.is_empty line then
+        Skipped (pb, "empty line")
+      else
+        parse_aux pb 
 end
 
 
@@ -332,37 +368,43 @@ module Trace = struct
       | t -> Skipped (pb, "expected ',' or ')' but found " ^ string_of_token t) in
     parse_init ()
 
-  let parse_from_channel inc pb_opt mon  =
-    match mon with 
-    | Argument.Monitor.DejaVu ->
-    (match CSV_dejavu.parse_from_channel inc pb_opt with
-      | CSV_dejavu.Processed pb -> Processed pb
-      | CSV_dejavu.Skipped (pb, msg) -> Skipped (pb, msg)
-      | CSV_dejavu.Watermark w -> Watermark w
-      | CSV_dejavu.Finished -> Finished)
-    | MonPoly | TimelyMon | VeriMon ->
-    if !Etc.log_is_csv then
-      match CSV.parse_from_channel inc pb_opt with
-      | CSV.Processed pb -> Processed pb
-      | CSV.Skipped (pb, msg) -> Skipped (pb, msg)
-      | CSV.Watermark w -> Watermark w
-      | CSV.Finished -> Finished
-    else if Option.is_none pb_opt then
+  let parse_from_channel inc pb_opt =
+  match pb_opt with
+  | None ->
       let lexbuf = Lexing.from_channel inc in
       parse_aux (Parsebuf.init lexbuf)
-    else parse_aux (Parsebuf.clean (Option.value_exn pb_opt))
-
-  let parse_from_string log =
-    let lexbuf = Lexing.from_string log in
-    parse_aux (Parsebuf.init lexbuf)
-
-  let parse_line line =
-    let lexbuf = Lexing.from_string line in
-    match parse_aux (Parsebuf.init lexbuf) with
-    | Processed pb -> Some (pb.ts, pb.db)
-    | Skipped (_, s) -> None
-    | Finished -> None
-    | Watermark w -> None
-
+  | Some prev ->
+      parse_aux (Parsebuf.clean prev)
 end
 
+
+
+module Event_stream = struct
+
+  type cursor = Processed of Parsebuf.t
+              | Skipped   of Parsebuf.t * string
+              | Watermark of int
+              | Finished
+
+  let parse inc pb_opt mon =
+    match mon with
+    | Argument.Monitor.DejaVu ->
+        (match CSV_dejavu.parse_from_channel inc pb_opt with
+         | CSV_dejavu.Processed pb     -> Processed pb
+         | CSV_dejavu.Skipped (pb, m)  -> Skipped (pb, m)
+         | CSV_dejavu.Watermark w      -> Watermark w
+         | CSV_dejavu.Finished         -> Finished)
+    | TimelyMon when !Etc.log_is_csv ->
+        (match CSV.parse_from_channel inc pb_opt with
+         | CSV.Processed pb    -> Processed pb
+         | CSV.Skipped (pb, m) -> Skipped (pb, m)
+         | CSV.Watermark w     -> Watermark w
+         | CSV.Finished        -> Finished)
+    | MonPoly | TimelyMon | VeriMon ->
+        (match Trace.parse_from_channel inc pb_opt with
+         | Trace.Processed pb    -> Processed pb
+         | Trace.Skipped (pb, m) -> Skipped (pb, m)
+         | Trace.Watermark w     -> Watermark w
+         | Trace.Finished        -> Finished)
+
+end

@@ -38,7 +38,6 @@ module CSV : sig
               | Finished
   val predicate: string -> string
   val parse_key_value: string -> (string * string) option
-  val parse_event: string -> (int * int option * Db.t) option
   val parse_from_channel: Stdio.In_channel.t -> Parsebuf.t option -> cursor
 end
 
@@ -49,7 +48,6 @@ module CSV_dejavu : sig
               | Watermark of int
               | Finished
 
-  val parse_event: string -> (Db.Event.t * int option) option
   val parse_from_channel: Stdio.In_channel.t -> Parsebuf.t option -> cursor
 end
 
@@ -61,12 +59,19 @@ module Trace : sig
               | Watermark of int
               | Finished
 
-  val parse_from_channel: Stdio.In_channel.t -> Parsebuf.t option -> Argument.Monitor.t -> cursor
+  val parse_from_channel: Stdio.In_channel.t -> Parsebuf.t option -> cursor
 
-  val parse_from_string: string -> cursor
-
-  val parse_line: string -> (timestamp option * Db.t) option
 
 end
 
 
+
+module Event_stream : sig
+  type cursor = Processed of Parsebuf.t
+              | Skipped of Parsebuf.t * string
+              | Watermark of int
+              | Finished
+
+  val parse :
+    Stdio.In_channel.t -> Parsebuf.t option -> Argument.Monitor.t -> cursor
+end
