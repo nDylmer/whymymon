@@ -8,7 +8,7 @@ cd ..
 git clone https://github.com/leonardolima/dejavu-online.git
 git clone https://git.ku.dk/kfx532/timelymon.git
 cd timelymon
-git checkout RV24_Tool_Paper 
+cargo build -r
 cd ..
 
 

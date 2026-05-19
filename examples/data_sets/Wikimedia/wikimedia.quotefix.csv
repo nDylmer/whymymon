@@ -34,3 +34,5 @@ new, tp=60, ts=1775731960, user="Shuaib-bot", bot=True
 edit, tp=60, ts=1775731960, user="Rkieferbot", bot=True
 categorize, tp=59, ts=1775731959, user="Amelie.llc", bot=False
 log, tp=60, ts=1775731960, user="Ladsgroup", bot=True
+edit, tp=66, ts=1775731966, user="Well, Well, Bot!", bot=True
+edit, tp=66, ts=1775731966, user="L'Ospite Inatteso", bot=False
