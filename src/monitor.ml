@@ -21,6 +21,7 @@ module Quantifier = struct
 
 end
 
+let writer_done = ref false
 type range =
   | Lit of timepoint * timestamp
   | Int of timepoint * timepoint * timestamp * timestamp
@@ -1138,7 +1139,7 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
         (* get_pos output to keep track of progress *)
             (if !Etc.debug then traceln "Read current progress";
             let tp = Emonitor.parse_prog_tp mon line in
-            if Int.equal !last_tp tp then (Eio.Flow.copy_string "Stop\n" r_sink));
+            if Int.equal !last_tp tp && !writer_done  then (Eio.Flow.copy_string "Stop\n" r_sink));
           Fiber.yield ()
         )
     done
@@ -1148,6 +1149,7 @@ let write (mon: Argument.Monitor.t) w_sink stream prefix last_tp =
   let rec step pb_opt =
     match Other_parser.Event_stream.parse stream pb_opt mon with
     | Finished -> if !Etc.debug then traceln "Reached the end of event stream";
+                  writer_done := true;
                   last_tp := prefix_max_tp !prefix;
                   (match mon with
                       | DejaVu

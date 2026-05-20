@@ -83,6 +83,10 @@ module T = struct
   let list_to_string ds =
     String.drop_suffix (List.fold ds ~init:"" ~f:(fun acc d -> acc ^ (to_string d) ^ ", ")) 2
 
+  let list_to_q_string ds =
+  String.drop_suffix
+    (List.fold ds ~init:"" ~f:(fun acc d -> acc ^ to_q_string d ^ ", "))
+    2
 end
 
 include T
