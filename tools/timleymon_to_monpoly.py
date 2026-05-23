@@ -10,11 +10,50 @@ def parse_value(s):
         return s[1:-1]
     return s
 
+def split_fields(line):
+    fields = []
+    buf = []
+    in_quotes = False
+    for c in line:
+        if c == '"':
+            in_quotes = not in_quotes
+            buf.append(c)
+        elif c == ',' and not in_quotes:
+            fields.append("".join(buf))
+            buf = []
+        else:
+            buf.append(c)
+    fields.append("".join(buf))
+    return fields
 
 def parse_line(line):
-    # Use csv module to handle quoted fields with commas
-    reader = csv.reader([line], skipinitialspace=True)
-    fields = next(reader)
+    fields = split_fields(line)
+    if not fields:
+        return None
+
+    pred_name = fields[0].strip()
+    ts = None
+    args = []
+
+    for f in fields[1:]:
+        if "=" not in f:
+            continue
+        key, _, value = f.partition("=")
+        key = key.strip()
+        value = parse_value(value)
+        if key == "tp":
+            continue
+        elif key == "ts":
+            ts = int(value)
+        else:
+            args.append(value)
+
+    if ts is None:
+        return None
+    return pred_name, ts, args
+
+def parse_line(line):
+    fields = split_fields(line)
     if not fields:
         return None
 
@@ -61,7 +100,7 @@ def main():
     for ts in sorted(events_by_ts):
         parts = [f"@{ts}"]
         for pred, args in events_by_ts[ts]:
-            args_str = ", ".join(args)
+            args_str = ", ".join(f'"{a}"' for a in args)
             parts.append(f"{pred}({args_str})")
         print(" ".join(parts))
 
