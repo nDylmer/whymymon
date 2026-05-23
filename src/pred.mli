@@ -36,6 +36,8 @@ module Term : sig
 
   val list_to_string: t list -> string
 
+  val list_to_timelymon_string: t list -> string
+
   val list_to_json_string: t list -> string
 
 end

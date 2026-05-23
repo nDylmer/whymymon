@@ -1,7 +1,7 @@
 {
   "name": "visualization",
   "version": "0.1.0",
-  "homepage": "https://github.com/runtime-monitoring/whymymon",
+  "homepage": "https://github.com/whymymon",
   "private": true,
   "dependencies": {
     "@emotion/react": "^11.7.1",

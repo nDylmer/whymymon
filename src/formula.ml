@@ -460,8 +460,8 @@ let rec to_monpoly = function
 let rec to_timelymon = function
   | TT -> Printf.sprintf "TRUE"
   | FF -> Printf.sprintf "FALSE"
-  | EqConst (x, c) -> Printf.sprintf "(%s = %s)" x (Dom.to_q_string c)
-  | Predicate (r, trms) -> Printf.sprintf "%s(%s)" r (Term.list_to_string trms)
+  | EqConst (x, c) -> Printf.sprintf "(%s = %s)" x (Dom.to_timelymon_string c)
+  | Predicate (r, trms) -> Printf.sprintf "%s(%s)" r (Term.list_to_timelymon_string trms)
   | Neg f -> Printf.sprintf "(NOT %a)" (fun x -> to_timelymon) f
   | And (f, g) -> Printf.sprintf "(%a AND %a)" (fun x -> to_timelymon) f (fun x -> to_timelymon) g
   | Or (f, g) -> Printf.sprintf "(%a OR %a)" (fun x -> to_timelymon) f (fun x -> to_timelymon) g

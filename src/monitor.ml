@@ -172,6 +172,11 @@ let prefix_max_tp prefix =
   | Some tp -> tp
   | None -> -1
 
+let prev_in_set s tp =
+  Set.binary_search s ~compare:Int.compare `Last_strictly_less_than tp
+
+let next_in_set s tp =
+  Set.binary_search s ~compare:Int.compare `First_strictly_greater_than tp
 
 let do_neg (p_opt: Proof.t option) (pol: Polarity.t) =
   match p_opt, pol with
@@ -392,18 +397,14 @@ let rec stop vars vars_map expl (pol: Polarity.t) = match vars, expl, pol with
   | [], Leaf (Some (V _)), VIO -> true
   | x :: xs, Node (y, part), _ when String.equal x y ->
     let (kind, pol) = Map.find_exn vars_map x in
-     match kind, pol with
+     (match kind, pol with
      | Quantifier.Existential, Polarity.SAT
        | Universal, VIO -> Part.exists part (fun expl -> stop xs vars_map expl pol)
      | Existential, VIO
        | Universal, SAT -> Part.for_all part (fun expl -> stop xs vars_map expl pol)
-     | _ -> raise (Failure "stop: issue with variable ordering")
+     | _ -> raise (Failure "stop: issue with variable ordering"))
   | _ -> false
   
-let should_stop vars vars_map mexpl pol =
-  try stop vars vars_map mexpl pol with
-  | Match_failure _ -> false
- 
 
 let explain prefix v pol tp f =
   (* traceln "assignment: %s" (Assignment.to_string v); 
@@ -541,14 +542,13 @@ let explain prefix v pol tp f =
       in
       expl
     | Once (i, f) ->
-                          let (ts_l, ts_u) = timestamp_interval prefix tp in
-                          (match ts_u with
-                          | Infinity -> failwith "infinite upper bound in ONCE"
-                          | Finite ts_u ->
-                            let l = match Interval.right i with
-                              | None -> 0
-                              | Some b -> ts_l - b in
-                            let r = Finite (ts_u - Interval.left i) in
+                          (let (ts_l, ts_u) = timestamp_interval prefix tp in
+                          let l = (match Interval.right i with
+                            | None -> 0
+                            | Some b -> ts_l - b )in
+                          let r = (match ts_u with
+                            | Infinity -> Infinity
+                            | Finite ts_u -> Finite (ts_u - Interval.left i)) in
                             let candidates = past_candidate_tps prefix tp l r in
                             match pol with
                             | SAT -> let expl = once_sat tp candidates vars f tp (Pdt.Leaf None) vars_map in
@@ -577,14 +577,13 @@ let explain prefix v pol tp f =
                                      (* traceln "EVENTUALLY_VIO expl = %s" (Expl.to_string expl); *)
                                      expl)
     | Historically (i, f) -> 
-                          let (ts_l, ts_u) = timestamp_interval prefix tp in
-                          (match ts_u with
-                          | Infinity -> failwith "infinite upper bound in HISTORICALLY"
-                          | Finite ts_u ->
-                            let l = match Interval.right i with
-                              | None -> 0
-                              | Some b -> ts_l - b in
-                            let r = Finite (ts_u - Interval.left i) in
+                          (let (ts_l, ts_u) = timestamp_interval prefix tp in
+                          let l = (match Interval.right i with
+                            | None -> 0
+                            | Some b -> ts_l - b )in
+                          let r = (match ts_u with
+                            | Infinity -> Infinity
+                            | Finite ts_u -> Finite (ts_u - Interval.left i)) in
                             let candidates = past_candidate_tps prefix tp l r in
                               match pol with
                               | SAT -> 
@@ -626,15 +625,16 @@ let explain prefix v pol tp f =
                             | Infinity -> Infinity
                             | Finite ts_u -> Finite (ts_u - Interval.left i)) in
                             let candidates = past_candidate_tps prefix tp l r in
+                            let min_cand = Option.value (Set.min_elt candidates) ~default:(tp + 1) in
                             match pol with
                             | SAT -> let expl = Pdt.uneither
-                                                  (since_sat candidates vars f1 f2 tp
+                                                  (since_sat candidates min_cand vars f1 f2 tp
                                                      (Pdt.Leaf (Either.second Fdeque.empty)) vars_map) in
                                      (* traceln "SINCE_SAT expl = %s" (Expl.opt_to_string expl); *)
                                      expl
                             | VIO -> let expl =
                                        Pdt.uneither
-                                         (since_vio tp candidates vars f1 f2 tp
+                                         (since_vio tp candidates min_cand vars f1 f2 tp
                                             (Pdt.Leaf (Either.second Fdeque.empty)) vars_map) in
                                     (* traceln "SINCE_VIO  expl = %s"  (Expl.opt_to_string expl); *)
                                      expl)
@@ -663,10 +663,17 @@ let explain prefix v pol tp f =
   (* Once *)
   
   and once_sat cur_tp candidates vars f tp mexpl vars_map =
-  if tp < 0 then
+  let terminate mexpl = 
     Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
+  in
+  let bin_search mexpl =
+    match prev_in_set candidates tp with
+    | Some next_tp -> once_sat cur_tp candidates vars f next_tp mexpl vars_map
+    | None -> terminate mexpl
+  in
+  if tp < 0 then terminate mexpl
   else if not (Set.mem candidates tp) then
-    once_sat cur_tp candidates vars f (tp - 1) mexpl vars_map
+    bin_search mexpl
   else
     let expl = eval vars vars_map tp SAT f in
     let mexpl =
@@ -681,16 +688,24 @@ let explain prefix v pol tp f =
           | Some p -> Some p)
         expl mexpl
     in
-    if should_stop vars vars_map mexpl SAT then mexpl
+    if stop vars vars_map mexpl SAT then mexpl
     else once_sat cur_tp candidates vars f (tp - 1) mexpl vars_map
 
   and once_vio cur_tp candidates vars f tp mexpl vars_map =
-  if tp < 0 then
+   let terminate mexpl = 
     Pdt.apply1_reduce either_v_equal vars
       (function First p -> First p
               | Second vps -> Either.first (Some (Proof.V (Proof.VOnce (cur_tp, tp+1, vps))))) mexpl
+  in
+  let bin_search mexpl =
+    match prev_in_set candidates tp with
+    | Some next_tp -> once_vio cur_tp candidates vars f next_tp mexpl vars_map
+    | None -> terminate mexpl
+  in
+  if tp < 0 then
+    terminate mexpl
   else if not (Set.mem candidates tp) then
-    once_vio cur_tp candidates vars f (tp-1) mexpl vars_map
+    bin_search mexpl
   else
     let expl = eval vars vars_map tp VIO f in
     let mexpl =
@@ -711,10 +726,18 @@ let explain prefix v pol tp f =
 
   (* Eventually *)
   and eventually_sat cur_tp candidates vars f tp mexpl vars_map =
-    if tp > prefix_max_tp prefix then
+    let terminate mexpl =
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
-    else if not (Set.mem candidates tp) then 
-      eventually_sat cur_tp candidates vars f (tp+1) mexpl vars_map
+    in
+    let bin_search mexpl =
+    match next_in_set candidates tp with
+    | Some next_tp -> eventually_sat cur_tp candidates vars f next_tp mexpl vars_map
+    | None -> terminate mexpl
+  in
+  if tp > prefix_max_tp prefix then
+    terminate mexpl
+  else if not (Set.mem candidates tp) then
+    bin_search mexpl
     else
          (let expl = eval vars vars_map tp SAT f in
           let mexpl = Pdt.apply2_reduce Proof.opt_equal vars
@@ -725,15 +748,23 @@ let explain prefix v pol tp f =
                                      | Some (Proof.S sp) -> Some (Proof.S (SEventually (cur_tp, sp)))
                                      | _ -> raise (Invalid_argument "found V proof in S case"))
                           | Some p -> Some p) expl mexpl in
-          if should_stop vars vars_map mexpl SAT then mexpl
+          if stop vars vars_map mexpl SAT then mexpl
           else eventually_sat cur_tp candidates vars f (tp+1) mexpl vars_map)
   and eventually_vio cur_tp candidates vars f tp mexpl vars_map =
-      if tp > prefix_max_tp prefix then
+      let terminate mexpl =
         Pdt.apply1_reduce either_v_equal vars
         (function First p -> First p
                 | Second vps -> Either.first (Some (Proof.V (Proof.VEventually (cur_tp, tp-1, vps))))) mexpl
+      in
+      let bin_search mexpl =
+          match next_in_set candidates tp with
+          | Some next_tp -> eventually_vio cur_tp candidates vars f next_tp mexpl vars_map
+          | None -> terminate mexpl
+        in
+      if tp > prefix_max_tp prefix then
+          terminate mexpl
       else if not (Set.mem candidates tp) then
-           eventually_vio cur_tp candidates vars f (tp + 1) mexpl vars_map
+          bin_search mexpl
       else
          (let expl = eval vars vars_map tp VIO f in
           let mexpl = Pdt.apply2_reduce either_v_equal vars
@@ -751,13 +782,20 @@ let explain prefix v pol tp f =
 
   (* Historically *)
   and historically_sat cur_tp candidates vars f tp mexpl vars_map =
-    if tp < 0 then
+    let terminate mexpl =
       Pdt.apply1_reduce either_s_equal vars
         (function First p -> First p
                 | Second sps -> Either.first (Some (Proof.S (Proof.SHistorically (cur_tp, tp+1, sps))))) mexpl
-    else
-       if not (Set.mem candidates tp) then
-          historically_sat cur_tp candidates vars f (tp - 1) mexpl vars_map
+    in
+    let bin_search mexpl =
+      match prev_in_set candidates tp with
+      | Some next_tp -> historically_sat cur_tp candidates vars f next_tp mexpl vars_map
+      | None -> terminate mexpl
+  in
+    if tp < 0 then
+      terminate mexpl
+    else if not (Set.mem candidates tp) then
+      bin_search mexpl
        else
                let expl = eval vars vars_map tp SAT f in
                 let mexpl = Pdt.apply2_reduce either_s_equal vars
@@ -773,11 +811,19 @@ let explain prefix v pol tp f =
                 if stop_either vars vars_map mexpl SAT then mexpl
              else historically_sat cur_tp candidates vars f (tp-1) mexpl vars_map
   and historically_vio cur_tp candidates vars f tp mexpl vars_map =
-    if tp < 0 then
+    let terminate mexpl =
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
+    in
+    let bin_search mexpl =
+      match prev_in_set candidates tp with
+      | Some next_tp -> historically_vio cur_tp candidates vars f next_tp mexpl vars_map
+      | None -> terminate mexpl
+    in
+    if tp < 0 then
+      terminate mexpl
     else
        if not (Set.mem candidates tp) then
-     historically_vio cur_tp candidates vars f (tp - 1) mexpl vars_map
+     bin_search mexpl
     else
             let expl = eval vars vars_map tp VIO f in
              let mexpl = Pdt.apply2_reduce Proof.opt_equal vars
@@ -788,17 +834,25 @@ let explain prefix v pol tp f =
                                         | Some (Proof.V vp) -> Some (Proof.V (VHistorically (cur_tp, vp)))
                                         | _ -> raise (Invalid_argument "found S proof in V case"))
                              | Some p -> Some p) expl mexpl in
-             if should_stop vars vars_map mexpl VIO then mexpl
+             if stop vars vars_map mexpl VIO then mexpl
           else historically_vio cur_tp candidates vars f (tp-1) mexpl vars_map
 
   (* Always *)
   and always_sat cur_tp candidates vars f tp mexpl vars_map =
-    if tp > prefix_max_tp prefix then
+    let terminate mexpl =
       Pdt.apply1_reduce either_s_equal vars
         (function First p -> First p
                 | Second sps -> Either.first (Some (Proof.S (Proof.SAlways (cur_tp, tp-1, sps))))) mexpl
+    in
+    let bin_search mexpl =
+      match next_in_set candidates tp with
+      | Some next_tp -> always_sat cur_tp candidates vars f next_tp mexpl vars_map
+      | None -> terminate mexpl
+    in
+    if tp > prefix_max_tp prefix then
+      terminate mexpl
     else if not (Set.mem candidates tp) then 
-        always_sat cur_tp candidates vars f (tp+1) mexpl vars_map
+        bin_search mexpl
     else
          let expl = eval vars vars_map tp SAT f in
           let mexpl = Pdt.apply2_reduce either_s_equal vars
@@ -828,12 +882,12 @@ let explain prefix v pol tp f =
                                      | Some (Proof.V vp) -> Some (Proof.V (VAlways (cur_tp, vp)))
                                      | _ -> raise (Invalid_argument "found S proof in V case"))
                           | Some p -> Some p) expl mexpl in
-          if should_stop vars vars_map mexpl VIO then mexpl
+          if stop vars vars_map mexpl VIO then mexpl
        else always_vio cur_tp candidates vars f (tp+1) mexpl vars_map
 
   (* Since *)
-  and since_sat candidates vars f1 f2 tp mexpl vars_map =
-    if tp < 0 then
+  and since_sat candidates min_cand vars f1 f2 tp mexpl vars_map =
+    if tp < min_cand  then
       Pdt.apply1_reduce either_s_equal vars
         (function First p -> First p
                 | Second _ -> Either.first None) mexpl
@@ -848,17 +902,14 @@ let explain prefix v pol tp f =
                                 (match sp1_opt, sp2_opt with
                                  | None, None -> Either.first None
                                  | Some (Proof.S sp1), None ->
-                                    (* Found alpha satisfaction within the interval *)
                                     Either.second (Fdeque.enqueue_front sp1s sp1)
                                  | _, Some (Proof.S sp2) ->
-                                    (* Found beta satisfaction within the interval *)
                                     Either.first (Some (Proof.S (SSince (sp2, sp1s))))
                                  | _ -> raise (Invalid_argument "found V proof in S deque")))
                            expl1 expl2 mexpl in
              if stop_either vars vars_map mexpl SAT then mexpl
-             else since_sat candidates vars f1 f2 (tp-1) mexpl vars_map
+             else since_sat candidates min_cand vars f1 f2 (tp-1) mexpl vars_map
           else
-            (* ts is between cur_tp and (not including) r *)
             (let expl1 = eval vars vars_map tp SAT f1 in
              let mexpl = Pdt.apply2_reduce either_s_equal vars
                            (fun sp1_opt p_sp1s ->
@@ -868,14 +919,13 @@ let explain prefix v pol tp f =
                                 (match sp1_opt with
                                  | None -> Either.first None
                                  | Some (Proof.S sp1) ->
-                                    (* Found alpha satisfaction *)
                                     Either.second (Fdeque.enqueue_front sp1s sp1)
                                  | _ -> raise (Invalid_argument "found V proof in S deque")))
                            expl1 mexpl in
              if stop_either vars vars_map mexpl SAT then mexpl
-             else since_sat candidates vars f1 f2 (tp-1) mexpl vars_map)
-  and since_vio cur_tp candidates vars f1 f2 tp mexpl vars_map =
-    if tp < 0 then
+             else since_sat candidates min_cand vars f1 f2 (tp-1) mexpl vars_map)
+  and since_vio cur_tp candidates min_cand vars f1 f2 tp mexpl vars_map =
+    if tp < min_cand then
       Pdt.apply1_reduce either_v_equal vars
         (function First p -> First p
                 | Second vp2s -> Either.first (Some (Proof.V (Proof.VSinceInf (cur_tp, tp+1, vp2s))))) mexpl
@@ -889,16 +939,13 @@ let explain prefix v pol tp f =
                                 | Second vp2s ->
                                    (match vp1_opt, vp2_opt with
                                     | None, Some (Proof.V vp2) ->
-                                       (* Found only beta violation within the interval *)
                                        Either.second (Fdeque.enqueue_front vp2s vp2)
                                     | Some (Proof.V vp1), Some (Proof.V vp2) ->
-                                       (* Found alpha and beta violation within the interval *)
                                        Either.first
                                          (Some (Proof.V (VSince (cur_tp, vp1, Fdeque.enqueue_front vp2s vp2))))
-                                    | _ -> (* traceln "p1 = %s\n" (Proof.to_string "" p1); *)
-                                       (* traceln "p2 = %s\n" (Proof.to_string "" p2); *)
+                                    | _ ->
                                        Either.first None)) expl1 expl2 mexpl in
-                since_vio cur_tp candidates vars f1 f2 (tp-1) mexpl vars_map)
+                since_vio cur_tp candidates min_cand vars f1 f2 (tp-1) mexpl vars_map)
              else
                (let expl1 = eval vars vars_map tp VIO f1 in
                 let mexpl = Pdt.apply2_reduce either_v_equal vars
@@ -911,7 +958,7 @@ let explain prefix v pol tp f =
                                     | Some (Proof.V vp1) ->
                                        Either.first (Some (Proof.V (Proof.VSince (cur_tp, vp1, Fdeque.empty))))))
                               expl1 mexpl in
-                since_vio cur_tp candidates vars f1 f2 (tp-1) mexpl vars_map)
+                since_vio cur_tp candidates min_cand vars f1 f2 (tp-1) mexpl vars_map)
 
   (* Until *)
   and until_sat candidates vars f1 f2 tp mexpl vars_map =
@@ -930,17 +977,14 @@ let explain prefix v pol tp f =
                              (match sp1_opt, sp2_opt with
                               | None, None -> Either.first None
                               | Some (Proof.S sp1), None ->
-                                 (* Found alpha satisfaction within the interval *)
                                  Either.second (Fdeque.enqueue_back sp1s sp1)
                               | _, Some (Proof.S sp2) ->
-                                 (* Found beta satisfaction within the interval *)
                                  Either.first (Some (Proof.S (SUntil (sp2, sp1s))))
                               | _ -> raise (Invalid_argument "found V proof in S deque")))
                         expl1 expl2 mexpl in
           if stop_either vars vars_map mexpl SAT then mexpl
           else until_sat candidates vars f1 f2 (tp+1) mexpl vars_map
        else
-         (* ts is between cur_tp (being evaluated) and (not including) l *)
          (let expl1 = eval vars vars_map tp SAT f1 in
           let mexpl = Pdt.apply2_reduce either_s_equal vars
                         (fun sp1_opt p_sp1s ->
@@ -950,14 +994,13 @@ let explain prefix v pol tp f =
                              (match sp1_opt with
                               | None -> Either.first None
                               | Some (Proof.S sp1) ->
-                                 (* Found alpha satisfaction *)
                                  Either.second (Fdeque.enqueue_back sp1s sp1)
                               | _ -> raise (Invalid_argument "found V proof in S deque")))
                         expl1 mexpl in
           if stop_either vars vars_map mexpl SAT then mexpl
           else until_sat candidates vars f1 f2 (tp+1) mexpl vars_map)
   and until_vio cur_tp candidates vars f1 f2 tp mexpl vars_map =
-    if tp>= prefix_max_tp prefix then
+    if tp >= prefix_max_tp prefix then
       Pdt.apply1_reduce either_v_equal2 vars
         (function First p -> First p
                 | Second (_, vp2s) -> Either.first (Some (Proof.V (Proof.VUntilInf (cur_tp, tp-1, vp2s))))) mexpl
@@ -974,11 +1017,9 @@ let explain prefix v pol tp f =
                              (match vp1_opt, vp2_opt with
                               | None, None -> Either.first None
                               | None, Some p ->
-                                 (* Found only beta violation within the interval *)
                                  Either.second (None, Fdeque.enqueue_back vp2s (Proof.unV p))
                               | Some p, None -> Either.first None
                               | Some p1, Some p2 ->
-                                 (* Found alpha and beta violation within the interval *)
                                  Either.second (Some (Proof.unV p1), Fdeque.enqueue_back vp2s (Proof.unV p2))))
                         expl1 expl2 mexpl in
           if stop_either vars vars_map mexpl VIO then mexpl
@@ -1053,7 +1094,10 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
         | None ->
             (List.iter assignments ~f:(fun (tp,ts, v) ->
                 (* Stdio.printf "expl = %s\n %d" (Expl.opt_to_string (explain !prefix v pol tp f))tp; *)
-                let expl = Pdt.unsomes (explain !prefix v pol tp f ) in
+                match Pdt.prune_nones (explain !prefix v pol tp f ) with
+                | None -> ()
+                | Some expl ->
+                (* let expl = Pdt.unsomes (explain !prefix v pol tp f ) in *)
                 match mode with
                 | Argument.Mode.Unverified -> Out.Plain.print (Explanation (tp, (interval_ts_option !prefix tp),v, expl))
                 | Verified ->

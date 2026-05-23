@@ -38,4 +38,6 @@ val to_string: t -> string
 
 val to_q_string: t -> string
 
+val to_timelymon_string: t -> string
+
 val list_to_string: t list -> string

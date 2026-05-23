@@ -80,6 +80,11 @@ module T = struct
     | Str v -> "\"" ^ v ^ "\""
     | Float v -> Float.to_string v
 
+  let to_timelymon_string = function
+    | Int v -> Int.to_string v
+    | Str v -> "\"'" ^ v ^ "'\""
+    | Float v -> Float.to_string v
+
   let list_to_string ds =
     String.drop_suffix (List.fold ds ~init:"" ~f:(fun acc d -> acc ^ (to_string d) ^ ", ")) 2
 
