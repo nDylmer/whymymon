@@ -27,7 +27,7 @@ module Event = struct
                                  | TFloat -> Float (Float.of_string c)))
       else raise (Invalid_argument (Printf.sprintf "predicate %s has arity %d" name pred_sig.arity))
 
-    let to_string (name, ds) = Printf.sprintf "%s(%s)" name (Dom.list_to_string ds)
+    let to_string (name, ds) = Printf.sprintf "%s(%s)" name (Dom.list_to_q_string ds)
 
     let to_json (name, ds) =
       String.concat ~sep:", "
