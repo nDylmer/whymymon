@@ -1094,10 +1094,7 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
         | None ->
             (List.iter assignments ~f:(fun (tp,ts, v) ->
                 (* Stdio.printf "expl = %s\n %d" (Expl.opt_to_string (explain !prefix v pol tp f))tp; *)
-                match Pdt.prune_nones (explain !prefix v pol tp f ) with
-                | None -> ()
-                | Some expl ->
-                (* let expl = Pdt.unsomes (explain !prefix v pol tp f ) in *)
+                let expl = Pdt.unsomes (explain !prefix v pol tp f ) in
                 match mode with
                 | Argument.Mode.Unverified -> Out.Plain.print (Explanation (tp, (interval_ts_option !prefix tp),v, expl))
                 | Verified ->
