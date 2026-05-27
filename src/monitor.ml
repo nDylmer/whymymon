@@ -363,7 +363,6 @@ let either_v_equal2 e e' = match e, e' with
 
 (* Note that the polarity pol considered is the one on the bottom level *)
 let rec stop_either vars vars_map expl (pol: Polarity.t) =
-  traceln "STOP_EITHER |vars| = %d; pol = %s" (List.length vars) (Polarity.to_string pol);
   match vars, expl, pol with
   | [], Pdt.Leaf (Either.First (Some (Proof.S _))), SAT -> true
   | [], Leaf (First (Some (V _))), VIO -> true
@@ -697,7 +696,7 @@ let explain prefix v pol tp f =
   (* Eventually *)
   and eventually_sat cur_tp (l,r) vars f tp mexpl vars_map =
     let (ts_l, ts_u) = timestamp_interval prefix tp in
-    if lower_gt_upper ts_l r then
+    if lower_gt_upper ts_l r || tp > prefix_max_tp prefix then
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
     else
       (if leq_upper l ts_u && leq_upper ts_l r then
@@ -715,7 +714,7 @@ let explain prefix v pol tp f =
        else eventually_sat cur_tp (l,r) vars f (tp+1) mexpl vars_map)
   and eventually_vio cur_tp (l,r) vars f tp mexpl vars_map =
     let (ts_l, ts_u) = timestamp_interval prefix tp in
-    if lower_gt_upper ts_l r then
+    if lower_gt_upper ts_l r || tp > prefix_max_tp prefix then
       Pdt.apply1_reduce either_v_equal vars
         (function First p -> First p
                 | Second vps -> Either.first (Some (Proof.V (Proof.VEventually (cur_tp, tp-1, vps))))) mexpl
@@ -794,7 +793,7 @@ let explain prefix v pol tp f =
   (* Always *)
   and always_sat cur_tp (l,r) vars f tp mexpl vars_map =
     let (ts_l, ts_u) = timestamp_interval prefix tp in
-    if lower_gt_upper ts_l r then
+    if tp > prefix_max_tp prefix || lower_gt_upper ts_l r then
       Pdt.apply1_reduce either_s_equal vars
         (function First p -> First p
                 | Second sps -> Either.first (Some (Proof.S (Proof.SAlways (cur_tp, tp-1, sps))))) mexpl
@@ -816,7 +815,7 @@ let explain prefix v pol tp f =
        else always_sat cur_tp (l,r) vars f (tp+1) mexpl vars_map)
   and always_vio cur_tp (l,r) vars f tp mexpl vars_map =
     let (ts_l, ts_u) = timestamp_interval prefix tp in
-    if lower_gt_upper ts_l r then
+    if lower_gt_upper ts_l r || tp > prefix_max_tp prefix then
       Pdt.apply1_reduce Proof.opt_equal vars (fun p_opt -> p_opt) mexpl
     else
       (if leq_upper l ts_u && leq_upper ts_l r then
@@ -920,8 +919,7 @@ let explain prefix v pol tp f =
                                     | _ -> (* traceln "p1 = %s\n" (Proof.to_string "" p1); *)
                                        (* traceln "p2 = %s\n" (Proof.to_string "" p2); *)
                                        Either.first None)) expl1 expl2 mexpl in
-                if stop_either vars vars_map mexpl VIO then mexpl
-                else since_vio cur_tp (l,r) vars f1 f2 (tp-1) mexpl vars_map)
+                 since_vio cur_tp (l,r) vars f1 f2 (tp-1) mexpl vars_map)
              else
                (let expl1 = eval vars vars_map tp VIO f1 in
                 let mexpl = Pdt.apply2_reduce either_v_equal vars
@@ -940,7 +938,7 @@ let explain prefix v pol tp f =
   (* Until *)
   and until_sat (l,r) vars f1 f2 tp mexpl vars_map =
     let (ts_l, ts_u) = timestamp_interval prefix tp in
-    if lower_gt_upper ts_l r then
+    if lower_gt_upper ts_l r || tp > prefix_max_tp prefix then
       Pdt.apply1_reduce either_s_equal vars
         (function First p -> First p
                 | Second _ -> Either.first None) mexpl
@@ -985,7 +983,7 @@ let explain prefix v pol tp f =
           else until_sat (l,r) vars f1 f2 (tp+1) mexpl vars_map))
   and until_vio cur_tp (l,r) vars f1 f2 tp mexpl vars_map =
     let (ts_l, ts_u) = timestamp_interval prefix tp in
-    if lower_gt_upper ts_l r then
+    if lower_gt_upper ts_l r || tp > prefix_max_tp prefix then
       Pdt.apply1_reduce either_v_equal2 vars
         (function First p -> First p
                 | Second (_, vp2s) -> Either.first (Some (Proof.V (Proof.VUntilInf (cur_tp, tp-1, vp2s))))) mexpl
