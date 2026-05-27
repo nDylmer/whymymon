@@ -1,1 +1,1 @@
-FORALL t1. FORALL x. (HISTORICALLY write(t1,x))
+FORALL f. (close(f) IMPLIES PREV EXISTS m. (NOT close(f) SINCE open(f,m)))
