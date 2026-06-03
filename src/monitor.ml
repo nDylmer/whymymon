@@ -207,7 +207,7 @@ let do_iff (p1_opt: Proof.t option) (p2_opt: Proof.t option) (pol: Polarity.t) :
   | Some (S sp1), Some (V vp2), VIO -> Some (V (VIffSV (sp1, vp2)))
   | Some (V vp1), Some (S sp2), VIO -> Some (V (VIffVS (vp1, sp2)))
   | Some (V vp1), Some (V vp2), SAT -> Some (S (SIffVV (vp1, vp2)))
-
+  | _ -> None
 let do_exists_leaf x tc = function
   | Some p -> (match p with
                | Proof.S sp -> Some (Proof.S (SExists (x, Dom.tt_default tc, sp)))

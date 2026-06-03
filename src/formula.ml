@@ -495,7 +495,7 @@ let rec to_dejavu = function
   | And (f, g) -> Printf.sprintf "(%s & %s)" (to_dejavu f) (to_dejavu g)
   | Or (f, g) -> Printf.sprintf "(%s | %s)" (to_dejavu f) (to_dejavu g)
   | Imp (f, g) -> Printf.sprintf "(%s -> %s)" (to_dejavu f) (to_dejavu g)
-  | Iff (_, _) -> failwith "DejaVu: no biconditional"
+  | Iff (f, g) -> Printf.sprintf "((%s -> %s) & (%s -> %s))" (to_dejavu f) (to_dejavu g) (to_dejavu g) (to_dejavu f)
   | Exists (x, _, f) -> Printf.sprintf "Exists %s . %s" x (to_dejavu f)
   | Forall (x, _, f) -> Printf.sprintf "Forall %s . %s" x (to_dejavu f)
   | Prev (_, f) -> Printf.sprintf "@ %s" (to_dejavu f)
