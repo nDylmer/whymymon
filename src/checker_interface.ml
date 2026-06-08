@@ -361,7 +361,7 @@ module Checker_proof = struct
     | VIffVS (vp1, sp2) -> Printf.sprintf "%sVIffVS{%d}\n%s\n%s" indent (int_of_nat (vp_at p)) (vp_to_string indent' vp1) (sp_to_string indent' sp2)
     | VExists (x, part) -> Printf.sprintf "%sVExists{%d}{%s}\n%s\n" indent (int_of_nat (vp_at (part_hd part)))
                              x (Checker_part.to_string indent' vp_to_string (subsvals part))
-    | VForall (x, d, vp) -> Printf.sprintf "%sSExists{%d}{%s=%s}\n%s\n" indent (int_of_nat (vp_at p))
+    | VForall (x, d, vp) -> Printf.sprintf "%sVForall{%d}{%s=%s}\n%s\n" indent (int_of_nat (vp_at p))
                               x (Checker_domain.to_string d) (vp_to_string indent' vp)
     | VPrev vp -> Printf.sprintf "%sVPrev{%d}\n%s" indent (int_of_nat (vp_at p)) (vp_to_string indent' vp)
     | VPrevZ -> Printf.sprintf "%sVPrevZ{0}" indent'

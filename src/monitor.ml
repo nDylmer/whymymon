@@ -153,6 +153,7 @@ let leq_upper x up =
   match up with
   | Finite u -> x > u
   | Infinity -> false
+
 let interval_may_overlap l r (ts_l, ts_u) =
   leq_upper ts_l r && leq_upper l ts_u
 
@@ -576,7 +577,7 @@ let explain prefix v pol tp f =
                                        expl)
     | Always (i, f) -> let (ts_l, ts_u) = timestamp_interval prefix tp in
                             (match ts_u with
-                            | Infinity -> failwith "infinite upper bound in Eventually"
+                            | Infinity -> failwith "infinite upper bound in Always"
                             | Finite ts_u ->
                               let l = ts_l + Interval.left i in
                               let r = match Interval.right i with
@@ -611,7 +612,7 @@ let explain prefix v pol tp f =
                                      expl)
     | Until (i, f1, f2) -> let (ts_l, ts_u) = timestamp_interval prefix tp in
                             (match ts_u with
-                            | Infinity -> failwith "infinite upper bound in Eventually"
+                            | Infinity -> failwith "infinite upper bound in Until"
                             | Finite ts_u ->
                               let l = ts_l + Interval.left i in
                               let r = match Interval.right i with
@@ -1040,18 +1041,6 @@ let send_data json http_flow =
 
 let checker_interval_fix prefix =
   List.map (List.range 0 (prefix_max_tp prefix + 1)) ~f:(fun tp ->
-    let db = db_at prefix tp in
-    let ts_l, ts_u = timestamp_interval prefix tp in
-    match ts_u with
-    | Infinity ->
-        [(ts_l, db)]
-    | Finite ts_hi ->
-        List.map (List.range ts_l (ts_hi + 1)) ~f:(fun ts ->
-          (ts, db)))
-
-
-let checker_interval_fix2 prefix =
-  List.map (List.range 0 (prefix_max_tp prefix + 1)) ~f:(fun tp ->
     let ts = fst (timestamp_interval prefix tp) in
     let db = db_at prefix tp in
     (ts, db))
@@ -1085,7 +1074,7 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                 | Argument.Mode.Unverified -> Out.Plain.print (Explanation (tp, (interval_ts_option !prefix tp),v, expl))
                 | Verified ->
                     let db = db_at !prefix tp in
-                    let base = checker_interval_fix2 !prefix in
+                    let base = checker_interval_fix !prefix in
                     let ts_l, ts_u = timestamp_interval !prefix tp in
                     let pot_ts =
                       match ts_u with
@@ -1105,7 +1094,7 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                 | LaTeX -> Out.Plain.print (ExplanationLatex (tp, (interval_ts_option !prefix tp), v,  expl, f))
                 | Debug ->
                     let db = db_at !prefix tp in
-                    let base = checker_interval_fix2 !prefix in
+                    let base = checker_interval_fix !prefix in
                     let ts_l, ts_u = timestamp_interval !prefix tp in
                     let pot_ts =
                       match ts_u with
@@ -1120,7 +1109,7 @@ let read (mon: Argument.Monitor.t) r_buf r_sink prefix f pol mode vars vars_tt l
                         (List.mapi base ~f:(fun i (t,d) ->
                           if i = tp then (ts,db) else if i > tp then (max t ts, d) else (t,d)))
                         v f (Pdt.unleaf expl) in b) in
-                      let (_,c_e,c_trace) = Checker_interface.check (checker_interval_fix2 !prefix) v f (Pdt.unleaf expl) in
+                      let (_,c_e,c_trace) = Checker_interface.check (checker_interval_fix !prefix) v f (Pdt.unleaf expl) in
                     Out.Plain.print (ExplanationCheckDebug (tp, (interval_ts_option !prefix tp), v, expl, bs, c_e, c_trace))
                 | DebugVis -> ()))
         | Some http_flow -> 

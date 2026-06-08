@@ -83,7 +83,7 @@ module WhyMyMon = struct
          process_args_rec args
       | ("-sig" :: sf :: args) ->
          sig_path_ref := Filename_unix.realpath sf;
-         
+         nec_arg_count := !nec_arg_count +1;
          Other_parser.Sig.parse_from_channel sf;
          process_args_rec args
       | ("-formula" :: f :: args) ->
@@ -106,7 +106,7 @@ module WhyMyMon = struct
       | ("-logstr" :: logs :: args) ->
          logstr_ref := logs;
          process_args_rec args
-      | [] -> if !nec_arg_count >= 1 then () else usage ()
+      | [] -> if !nec_arg_count >= 2 then () else usage ()
       | _ -> usage () in
     process_args_rec
 

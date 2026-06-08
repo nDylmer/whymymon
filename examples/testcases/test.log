@@ -1,3 +1,0 @@
-@1 login("alice", "success")
-@3 login("bob", "failure")
-@5 login("charlie", "failure")
